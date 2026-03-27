@@ -194,10 +194,10 @@
   function td(v, cls) { return '<td' + (cls ? ' class="' + cls + '"' : '') + '>' + v + '</td>'; }
   // 인라인 바 포함 셀 — CSS ::before로 바 렌더링, --w가 너비 비율
   function tdBar(v, w) { return '<td class="n bv" style="--w:' + w + '%">' + v + '</td>'; }
-  // heads: [['컬럼명', 오른쪽정렬여부], ...]
+  // heads: [['컬럼명', 오른쪽정렬여부], ...] — .tw 래퍼로 모바일 가로 스크롤
   function tbl(heads, rows) {
     var th = heads.map(function (h) { return '<th' + (h[1] ? ' class="n"' : '') + '>' + h[0] + '</th>'; }).join('');
-    return '<table><thead><tr>' + th + '</tr></thead><tbody>' + rows + '</tbody></table>';
+    return '<div class="tw"><table><thead><tr>' + th + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
   }
   // section.c 카드 래퍼
   function card(body, heading, tag) {
@@ -352,8 +352,10 @@
     '.c { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:16px 20px; margin-bottom:12px; }',
     'h2 { font-size:1em; color:var(--text); margin-bottom:10px; }',
     'h3 { font-size:.92em; color:var(--text2); margin-bottom:8px; }',
-    // 테이블
-    'table { width:100%; border-collapse:collapse; font-size:.88em; }',
+    // 테이블 — .tw 래퍼로 모바일 가로 스크롤 (스크롤바 숨김)
+    '.tw { overflow-x:auto; scrollbar-width:none; }',
+    '.tw::-webkit-scrollbar { display:none; }',
+    'table { width:100%; min-width:400px; border-collapse:collapse; font-size:.88em; }',
     'th { text-align:left; padding:6px 10px; border-bottom:1px solid var(--border2); color:var(--text2); font-weight:600; }',
     'th.n { text-align:right; }',
     'td { padding:5px 10px; border-bottom:1px solid var(--border); }',
@@ -396,6 +398,10 @@
     // 모달 바깥(반투명 배경) 클릭 시 닫기
     document.body.addEventListener('click', (e) => {
       if (e.target === document.body) risuai.hideContainer();
+    });
+    // ESC 키로 닫기
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') risuai.hideContainer();
     });
   }
 
