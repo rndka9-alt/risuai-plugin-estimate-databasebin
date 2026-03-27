@@ -176,119 +176,140 @@
   /* ───────── render ───────── */
 
   function render(r) {
-    const blocksRows = r.blocks
-      .map(
-        (b) =>
-          '<tr>' +
-          '<td>' + b.name + '</td>' +
-          '<td class="n">' + fmt(b.raw) + '</td>' +
-          '<td class="n">' + fmt(b.gz) + '</td>' +
-          '<td class="n">' + pct(b.gz, b.raw) + '</td>' +
-          '</tr>'
-      )
-      .join('');
+    var COLORS = ['#6366f1', '#f59e0b', '#10b981', '#8b5cf6'];
+    var totalRaw = r.totals.raw;
+    var saved = totalRaw - r.totals.gz;
+    var savePct = totalRaw > 0 ? ((1 - r.totals.gz / totalRaw) * 100) : 0;
 
-    const rootRows = r.rootKeys
-      .map(
-        (k) =>
-          '<tr><td><code>' + k.key + '</code></td>' +
-          '<td class="n">' + fmt(k.raw) + '</td>' +
-          '<td class="n">' + fmt(k.gz) + '</td>' +
-          '<td class="n">' + pct(k.gz, k.raw) + '</td></tr>'
-      )
-      .join('');
+    // ── blocks: skip trivial, compute %, unified unit ──
+    var blocks = r.blocks
+      .filter(function (b) { return b.raw >= 100; })
+      .map(function (b) {
+        var name = b.name
+          .replace(/ \(\d+개\)/, '')
+          .replace(/ \(접근 가능 부분\)/, '');
+        return { name: name, raw: b.raw, gz: b.gz, pct: totalRaw > 0 ? (b.raw / totalRaw * 100) : 0 };
+      });
 
-    const charLimit = 50;
-    let charRows = r.chars
-      .slice(0, charLimit)
-      .map(
-        (c) =>
-          '<tr><td title="' + esc(c.name) + '">' + esc(c.name.length > 30 ? c.name.slice(0, 28) + '...' : c.name) + '</td>' +
-          '<td class="n">' + (c.chatCount || '-') + '</td>' +
-          '<td class="n">' + (c.msgCount || '-') + '</td>' +
-          '<td class="n">' + fmt(c.raw) + '</td>' +
-          '<td class="n">' + fmt(c.gz) + '</td></tr>'
-      )
-      .join('');
-    if (r.chars.length > charLimit)
-      charRows += '<tr><td colspan="5" class="more">...외 ' + (r.chars.length - charLimit) + '개</td></tr>';
+    // 가장 큰 블록 기준 단위 통일
+    var maxRaw = blocks.length > 0 ? blocks[0].raw : 0;
+    var unit, divisor;
+    if (maxRaw >= 1024 * 1024 * 1024) { unit = 'GB'; divisor = 1024 * 1024 * 1024; }
+    else if (maxRaw >= 1024 * 1024) { unit = 'MB'; divisor = 1024 * 1024; }
+    else if (maxRaw >= 1024) { unit = 'KB'; divisor = 1024; }
+    else { unit = 'B'; divisor = 1; }
 
-    // 환경별 추신
-    let envNote = '';
-    if (r.info.saveMethod === 'account')
-      envNote = '계정 동기화: 블록별 gzip 압축 적용. Gzip 열이 실제 전송 크기에 가깝습니다.';
-    else if (r.info.platform === 'node')
-      envNote = 'Node/Docker: 원본 열이 실제 전송 크기에 가깝습니다.';
-    else if (r.info.platform === 'tauri')
-      envNote = 'Tauri: 로컬 파일 저장. 네트워크 전송 없음.';
-    else
-      envNote = '브라우저 로컬 저장. 네트워크 전송 없음.';
+    function fmtUnit(b) { return (b / divisor).toFixed(2) + ' ' + unit; }
 
+    var stackSegs = blocks.map(function (b, i) {
+      var label = b.pct >= 5 ? (b.pct.toFixed(0) + '%') : '';
+      return '<div class="seg" style="flex:' + Math.max(b.pct, 1).toFixed(1) + ';background:' + COLORS[i % COLORS.length] + '">' + label + '</div>';
+    }).join('');
+
+    var legend = blocks.map(function (b, i) {
+      return '<span class="leg"><span class="dot" style="background:' + COLORS[i % COLORS.length] + '"></span>' + b.name + ' ' + fmtUnit(b.raw) + '</span>';
+    }).join('');
+
+    // ── root: top 5 + 기타 (skip < 1KB) ──
+    var rootBig = r.rootKeys.filter(function (k) { return k.raw >= 1024; });
+    var rootTop = rootBig.slice(0, 5);
+    var rootRest = r.rootKeys.slice(rootTop.length);
+    var rootRestSum = rootRest.reduce(function (s, k) { return s + k.raw; }, 0) + rootBig.slice(5).reduce(function (s, k) { return s + k.raw; }, 0);
+    var rootMax = rootTop.length > 0 ? rootTop[0].raw : 1;
+
+    var rootHTML = rootTop.map(function (k) {
+      return '<tr><td>' + k.key + '</td><td class="n bv" style="--w:' + (k.raw / rootMax * 100).toFixed(0) + '%">' + fmt(k.raw) + '</td></tr>';
+    }).join('');
+    if (rootRest.length > 0 || rootBig.length > 5) {
+      rootHTML += '<tr><td class="mt">기타 ' + (r.rootKeys.length - rootTop.length) + '개</td><td class="n mt">' + fmt(rootRestSum) + '</td></tr>';
+    }
+
+    // ── chars: top 5 + 기타 ──
+    var charTop = r.chars.slice(0, 5);
+    var charRest = r.chars.slice(5);
+    var charRestSum = charRest.reduce(function (s, c) { return s + c.raw; }, 0);
+    var charMax = charTop.length > 0 ? charTop[0].raw : 1;
+
+    var charHTML = charTop.map(function (c) {
+      return '<tr><td title="' + esc(c.name) + '">' + esc(c.name.length > 25 ? c.name.slice(0, 23) + '..' : c.name) + '</td>' +
+        '<td class="n bv" style="--w:' + (c.raw / charMax * 100).toFixed(0) + '%">' + fmt(c.raw) + '</td></tr>';
+    }).join('');
+    if (charRest.length > 0)
+      charHTML += '<tr><td class="mt">기타 ' + charRest.length + '개</td><td class="n mt">' + fmt(charRestSum) + '</td></tr>';
+
+    // ── detail tables (collapsed) ──
+    var detBlocks = r.blocks.map(function (b) {
+      return '<tr><td>' + b.name + '</td><td class="n">' + fmt(b.raw) + '</td><td class="n">' + fmt(b.gz) + '</td><td class="n">' + (b.gz <= b.raw ? pct(b.gz, b.raw) : '-') + '</td></tr>';
+    }).join('');
+
+    var detRoot = r.rootKeys.map(function (k) {
+      return '<tr><td>' + k.key + '</td><td class="n">' + fmt(k.raw) + '</td><td class="n">' + fmt(k.gz) + '</td><td class="n">' + (k.gz <= k.raw ? pct(k.gz, k.raw) : '-') + '</td></tr>';
+    }).join('');
+
+    var detChars = r.chars.slice(0, 50).map(function (c) {
+      return '<tr><td title="' + esc(c.name) + '">' + esc(c.name.length > 25 ? c.name.slice(0, 23) + '..' : c.name) + '</td>' +
+        '<td class="n">' + fmt(c.raw) + '</td><td class="n">' + fmt(c.gz) + '</td><td class="n">' + (c.gz <= c.raw ? pct(c.gz, c.raw) : '-') + '</td></tr>';
+    }).join('');
+    if (r.chars.length > 50) detChars += '<tr><td colspan="4" class="more">...외 ' + (r.chars.length - 50) + '개</td></tr>';
+
+    // ── env note ──
+    var envNote = '';
+    if (r.info.saveMethod === 'account') envNote = '계정 동기화: Gzip 크기가 실제 전송 크기에 가깝습니다.';
+    else if (r.info.platform === 'node') envNote = 'Node/Docker: 원본 크기가 실제 전송 크기에 가깝습니다.';
+    else if (r.info.platform === 'tauri') envNote = 'Tauri: 로컬 파일 저장.';
+    else envNote = '브라우저 로컬 저장.';
+
+    // ── assemble ──
     document.getElementById('app').innerHTML =
-      '<div class="hd">' +
-        '<div class="ha">' +
-          '<button id="b-ref" class="btn">&#8635; 새로고침</button>' +
-          '<button id="b-cls" class="btn bc">&times;</button>' +
-        '</div>' +
+      '<div class="hd"><div class="ha">' +
+        '<button id="b-ref" class="btn">&#8635;</button>' +
+        '<button id="b-cls" class="btn bc">&times;</button>' +
+      '</div></div>' +
+
+      '<div class="sum">' +
+        '<div class="sum-big">' + fmt(r.totals.gz) + '</div>' +
+        '<div class="sum-label">' + savePct.toFixed(1) + '% 절감 (원본 ' + fmt(totalRaw) + ')</div>' +
       '</div>' +
 
       '<section class="c">' +
-        '<div class="sg">' +
-          '<div class="si"><div class="sv">' + fmt(r.totals.raw) + '</div><div class="sl">원본</div></div>' +
-          '<div class="si ac"><div class="sv">' + fmt(r.totals.gz) + '</div><div class="sl">Gzip</div></div>' +
-          '<div class="si"><div class="sv">' + pct(r.totals.gz, r.totals.raw) + '</div><div class="sl">압축률</div></div>' +
-        '</div>' +
+        '<div class="stack">' + stackSegs + '</div>' +
+        '<div class="stack-leg">' + legend + '</div>' +
       '</section>' +
 
-      '<section class="c">' +
-        '<h2>RisuSave 블록 구조</h2>' +
-        '<table>' +
-          '<thead><tr><th>블록</th><th class="n">원본</th><th class="n">Gzip</th><th class="n">압축률</th></tr></thead>' +
-          '<tbody>' + blocksRows +
-            '<tr class="tt"><td>합계 (추산)</td><td class="n">' + fmt(r.totals.raw) + '</td>' +
-            '<td class="n">' + fmt(r.totals.gz) + '</td>' +
-            '<td class="n">' + pct(r.totals.gz, r.totals.raw) + '</td></tr>' +
-          '</tbody>' +
-        '</table>' +
-      '</section>' +
+      (rootTop.length > 0
+        ? '<section class="c"><h2>Root 상위</h2>' +
+          '<table><thead><tr><th>키</th><th class="n">크기</th></tr></thead><tbody>' + rootHTML + '</tbody></table></section>'
+        : '') +
 
-      '<section class="c">' +
-        '<h2>Root 키별 사이즈</h2>' +
-        (r.rootKeys.length > 0
-          ? '<table>' +
-              '<thead><tr><th>키</th><th class="n">원본</th><th class="n">Gzip</th><th class="n">압축률</th></tr></thead>' +
-              '<tbody>' + rootRows + '</tbody>' +
-            '</table>'
-          : '<p class="mt">접근 가능한 키 중 5B 이상인 데이터가 없습니다.</p>') +
-      '</section>' +
+      (charTop.length > 0
+        ? '<section class="c"><h2>캐릭터 상위</h2>' +
+          '<table><thead><tr><th>이름</th><th class="n">크기</th></tr></thead><tbody>' + charHTML + '</tbody></table></section>'
+        : '') +
 
-      '<section class="c">' +
-        '<h2 id="ct" class="tg">캐릭터별 사이즈 (' + r.chars.length + '개) &#9656;</h2>' +
-        '<div id="cd" class="cl">' +
-          (r.chars.length > 0
-            ? '<table>' +
-                '<thead><tr><th>이름</th><th class="n">채팅</th><th class="n">메시지</th><th class="n">원본</th><th class="n">Gzip</th></tr></thead>' +
-                '<tbody>' + charRows + '</tbody>' +
-              '</table>'
-            : '<p class="mt">캐릭터가 없습니다.</p>') +
-        '</div>' +
-      '</section>' +
+      '<h2 id="dt" class="tg det-tg">상세 &#9656;</h2>' +
+      '<div id="dd" class="cl">' +
+        '<section class="c"><h3>블록</h3>' +
+          '<table><thead><tr><th>블록</th><th class="n">원본</th><th class="n">Gzip</th><th class="n">압축률</th></tr></thead><tbody>' + detBlocks + '</tbody></table></section>' +
+        '<section class="c"><h3>Root 키 전체</h3>' +
+          '<table><thead><tr><th>키</th><th class="n">원본</th><th class="n">Gzip</th><th class="n">압축률</th></tr></thead><tbody>' + detRoot + '</tbody></table></section>' +
+        '<section class="c"><h3>캐릭터 전체</h3>' +
+          '<table><thead><tr><th>이름</th><th class="n">원본</th><th class="n">Gzip</th><th class="n">압축률</th></tr></thead><tbody>' + detChars + '</tbody></table></section>' +
+      '</div>' +
 
       '<p class="fn">' + envNote + ' 화이트리스트 외 데이터는 추산에 미포함.</p>';
 
     // ── events ──
-    document.getElementById('b-cls').addEventListener('click', () => risuai.hideContainer());
-    document.getElementById('b-ref').addEventListener('click', async () => {
-      // 권한은 첫 승인 후 캐시되므로 풀스크린 상태에서도 동작
-      const db = await risuai.getDatabase();
-      const info = await risuai.getRuntimeInfo();
+    document.getElementById('b-cls').addEventListener('click', function () { risuai.hideContainer(); });
+    document.getElementById('b-ref').addEventListener('click', async function () {
+      var db = await risuai.getDatabase();
+      var info = await risuai.getRuntimeInfo();
       await run(db, info);
     });
-    document.getElementById('ct').addEventListener('click', () => {
-      const d = document.getElementById('cd');
-      const t = document.getElementById('ct');
-      const open = d.classList.toggle('cl');
-      t.innerHTML = '캐릭터별 사이즈 (' + r.chars.length + '개) ' + (open ? '&#9656;' : '&#9662;');
+    document.getElementById('dt').addEventListener('click', function () {
+      var d = document.getElementById('dd');
+      var t = document.getElementById('dt');
+      var closed = d.classList.toggle('cl');
+      t.innerHTML = '상세 ' + (closed ? '&#9656;' : '&#9662;');
     });
   }
 
@@ -299,41 +320,46 @@
     'html { background:transparent; }',
     'body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:rgba(0,0,0,0.55); color:var(--text); line-height:1.6; min-height:100vh; display:flex; align-items:flex-start; justify-content:center; padding:5vh 20px; }',
     '#app { background:var(--bg2); max-width:820px; width:100%; border-radius:12px; border:1px solid var(--border2); box-shadow:0 16px 48px rgba(0,0,0,0.4); padding:24px; max-height:90vh; overflow-y:auto; }',
-    '#app::-webkit-scrollbar { width:8px; }',
-    '#app::-webkit-scrollbar-track { background:transparent; }',
-    '#app::-webkit-scrollbar-thumb { background:var(--border2); border-radius:4px; }',
+    '#app { scrollbar-width:none; }',
+    '#app::-webkit-scrollbar { display:none; }',
 
-    '.hd { display:flex; justify-content:flex-end; align-items:center; margin-bottom:16px; }',
+    '.hd { display:flex; justify-content:flex-end; margin-bottom:8px; }',
     '.ha { display:flex; gap:8px; }',
-    '.btn { background:var(--btn); border:1px solid var(--border2); color:var(--text); padding:6px 14px; border-radius:6px; cursor:pointer; font-size:.9em; }',
+    '.btn { background:var(--btn); border:1px solid var(--border2); color:var(--text); padding:6px 12px; border-radius:6px; cursor:pointer; font-size:.9em; }',
     '.btn:hover { background:var(--border2); }',
     '.bc { color:var(--red); font-size:1.2em; line-height:1; }',
 
-    '.c { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:20px; margin-bottom:16px; }',
-    'h2 { font-size:1.05em; color:var(--text); margin-bottom:12px; }',
+    '.sum { text-align:center; margin-bottom:20px; }',
+    '.sum-big { font-size:2em; font-weight:700; }',
+    '.sum-label { font-size:.9em; color:var(--text2); margin-top:4px; }',
+
+    '.stack { display:flex; height:28px; border-radius:6px; overflow:hidden; gap:2px; }',
+    '.seg { min-width:4px; border-radius:4px; transition:flex .3s; display:flex; align-items:center; justify-content:center; font-size:.75em; font-weight:600; color:#fff; overflow:hidden; white-space:nowrap; }',
+    '.stack-leg { display:flex; flex-wrap:wrap; gap:6px 16px; margin-top:10px; font-size:.85em; }',
+    '.leg { display:flex; align-items:center; }',
+    '.dot { width:10px; height:10px; border-radius:3px; margin-right:6px; flex-shrink:0; }',
+
+    '.c { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:16px 20px; margin-bottom:12px; }',
+    'h2 { font-size:1em; color:var(--text); margin-bottom:10px; }',
+    'h3 { font-size:.92em; color:var(--text2); margin-bottom:8px; }',
 
     'table { width:100%; border-collapse:collapse; font-size:.88em; }',
-    'th { text-align:left; padding:8px 10px; border-bottom:1px solid var(--border2); color:var(--text2); font-weight:600; }',
+    'th { text-align:left; padding:6px 10px; border-bottom:1px solid var(--border2); color:var(--text2); font-weight:600; }',
     'th.n { text-align:right; }',
-    'td { padding:6px 10px; border-bottom:1px solid var(--border); }',
+    'td { padding:5px 10px; border-bottom:1px solid var(--border); }',
     'tbody tr:hover { background:var(--btn); }',
     '.n { text-align:right; font-variant-numeric:tabular-nums; }',
-    'tr.tt { font-weight:700; }',
-    'tr.tt td { border-top:2px solid var(--border2); padding-top:10px; }',
 
-    'code { font-size:.86em; }',
+    'td.bv { position:relative; z-index:0; }',
+    'td.bv::before { content:""; position:absolute; right:0; top:2px; bottom:2px; width:var(--w,0%); background:var(--accent); opacity:.3; border-radius:3px; pointer-events:none; z-index:-1; }',
 
-    '.sg { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; }',
-    '.si { text-align:center; padding:16px; background:var(--bg2); border-radius:8px; }',
-    '.si.ac { background:var(--btn); border:1px solid var(--accent); }',
-    '.sv { font-size:1.5em; font-weight:700; }',
-    '.sl { font-size:.82em; color:var(--text2); margin-top:4px; }',
     '.tg { cursor:pointer; user-select:none; }',
     '.tg:hover { color:var(--accent); }',
+    '.det-tg { font-size:.92em; color:var(--text2); margin:4px 0 8px; }',
     '.cl { display:none; }',
 
-    '.fn { font-size:.82em; color:var(--text2); text-align:center; margin-top:4px; }',
-    '.mt { font-size:.9em; color:var(--text2); }',
+    '.fn { font-size:.82em; color:var(--text2); text-align:center; margin-top:8px; }',
+    '.mt { color:var(--text2); }',
     '.more { text-align:center; color:var(--text2); font-style:italic; }',
     '.loading { text-align:center; padding:80px 20px; font-size:1.1em; color:var(--text2); }',
     '.err { text-align:center; padding:80px 20px; color:var(--red); font-size:1.1em; }',
@@ -341,7 +367,8 @@
     '@media(max-width:640px) {',
     '  body { padding:0; background:var(--bg2); }',
     '  #app { border-radius:0; max-height:none; border:none; box-shadow:none; }',
-    '  .sg { grid-template-columns:1fr; }',
+    '  .sum-big { font-size:1.4em; }',
+    '  .stack-leg { flex-direction:column; }',
     '  table { font-size:.8em; }',
     '  td,th { padding:4px 6px; }',
     '}',
@@ -425,5 +452,6 @@
     await run(db, info);
   }
 
-  await risuai.registerSetting('DB Size Estimator', open, '&#x1f4e6;', 'html');
+  var reg = await risuai.registerSetting('DB Size Estimator', open, '&#x1f4e6;', 'html');
+  risuai.onUnload(function () { risuai.unregisterUIPart(reg.id); });
 })();
