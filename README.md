@@ -12,9 +12,9 @@ RisuAI 플러그인. 서버에 전송되는 `database.bin` 용량을 추산합�
 
 ## 설치
 
-1. RisuAI 설정 → 플러그인
-2. 플러그인 추가 → `plugin.js` 코드 붙여넣기
-3. Settings 페이지에 "DB Size Estimator" 항목 생성됨
+1. [Releases](https://github.com/rndka9-alt/risuai-plugin-estimate-databasebin/releases/latest)에서 `plugin.min.js` 다운로드
+2. RisuAI 설정 → 플러그인 → 플러그인 추가 → 코드 붙여넣기
+3. Settings 페이지에 "database.bin" 항목 생성됨
 
 ## 제한사항
 
