@@ -1,0 +1,9 @@
+{
+  "private": true,
+  "scripts": {
+    "build": "terser plugin.js -o plugin.min.js -c -m"
+  },
+  "devDependencies": {
+    "terser": "^5"
+  }
+}

@@ -1,4 +1,4 @@
-# DB Size Estimator
+# database.bin
 
 RisuAI 플러그인. 서버에 전송되는 `database.bin` 용량을 추산합니다.
 

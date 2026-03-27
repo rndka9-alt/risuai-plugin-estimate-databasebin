@@ -1,4 +1,4 @@
-# DB Size Estimator
+# database.bin
 
 RisuAI Plugin API v3.0 기반 플러그인.
 서버에 전송되는 database.bin 용량을 추산한다. 접근 가능한 화이트리스트 데이터로 RisuSave 블록 포맷을 시뮬레이션하여 근사치를 제공한다.
