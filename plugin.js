@@ -321,7 +321,7 @@
     'tr.tt { font-weight:700; }',
     'tr.tt td { border-top:2px solid var(--border2); padding-top:10px; }',
 
-    'code { background:var(--btn); padding:2px 6px; border-radius:4px; font-size:.86em; color:var(--accent); }',
+    'code { font-size:.86em; }',
 
     '.sg { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; }',
     '.si { text-align:center; padding:16px; background:var(--bg2); border-radius:8px; }',
