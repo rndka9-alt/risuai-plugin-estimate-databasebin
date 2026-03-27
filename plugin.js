@@ -13,66 +13,6 @@
     'colorSchemeName', 'selectedPersona', 'characterOrder',
   ];
 
-  const MISSING = [
-    {
-      cat: 'API 키 & 인증',
-      keys: [
-        'openAIKey','proxyKey','claudeAPIKey','NAIApiKey','cohereAPIKey',
-        'mistralKey','openrouterKey','huggingfaceKey','stabilityKey','falToken',
-        'elevenLabKey','supaMemoryKey','hypaMemoryKey','google','vertexPrivateKey',
-        'vertexClientEmail','novelai','account','OaiCompAPIKeys','authRefreshes',
-        'fishSpeechKey',
-      ],
-      note: '짧은 문자열 위주. 용량 영향 미미.',
-    },
-    {
-      cat: '프롬프트 & 지시문',
-      keys: [
-        'mainPrompt','jailbreak','globalNote','additionalPrompt','descriptionPrefix',
-        'emotionPrompt','emotionPrompt2','personaPrompt','supaMemoryPrompt',
-        'autoSuggestPrompt','translatorPrompt','igpPrompt','OAIPrediction',
-        'systemContentReplacement','promptTemplate','promptSettings','globalscript',
-        'presetRegex',
-      ],
-      note: '길이에 따라 수 KB ~ 수십 KB. 유저 설정에 따라 편차 큼.',
-    },
-    {
-      cat: 'botPresets (별도 블록)',
-      keys: ['botPresets'],
-      note: 'RisuSave에서 별도 블록으로 저장됨. 프리셋 수에 따라 가변적.',
-    },
-    {
-      cat: '글로벌 로어북',
-      keys: ['loreBook'],
-      note: 'Root 블록에 포함. 항목 수에 따라 수 KB ~ 수 MB.',
-    },
-    {
-      cat: '모델 & 프로바이더',
-      keys: [
-        'apiType','aiModel','subModel','proxyRequestModel','openrouterRequestModel',
-        'customModels','customAPIFormat','formatingOrder','modelTools','fallbackModels',
-        'ollamaURL','ollamaModel',
-      ],
-      note: 'customModels 제외 시 용량 영향 작음.',
-    },
-    {
-      cat: '이미지 생성',
-      keys: ['sdProvider','sdConfig','NAIImgConfig','comfyConfig','falModel','falLora'],
-      note: 'comfyConfig 제외 시 용량 영향 미미.',
-    },
-    {
-      cat: 'UI & 기타 설정',
-      keys: [
-        'language','zoomsize','customBackground','fullScreen','iconsize','roundIcons',
-        'font','customFont','colorScheme','sendWithEnter','hotkeys','heightMode',
-        'username','userIcon','userNote','bias','statics','formatversion','saveTime',
-        'globalChatVariables','templateDefaultVariables','cipherChat','ooba',
-        'ainconfig','hordeConfig','NAIsettings','hypaV3Settings','hypaV3Presets',
-      ],
-      note: '대부분 단순 값. 총합 수 KB 수준.',
-    },
-  ];
-
   /* ───────── helpers ───────── */
 
   function fmt(b) {
@@ -82,8 +22,9 @@
     return (b / Math.pow(1024, i)).toFixed(2) + ' ' + u[i];
   }
 
-  function pct(part, whole) {
-    return whole === 0 ? '-' : ((part / whole) * 100).toFixed(1) + '%';
+  // 압축률: 양수 = 줄어듦, 음수 = 오히려 커짐
+  function pct(gz, raw) {
+    return raw === 0 ? '-' : ((1 - gz / raw) * 100).toFixed(1) + '%';
   }
 
   function esc(s) {
@@ -221,24 +162,11 @@
   /* ───────── render ───────── */
 
   function render(r) {
-    const envLabel = { node: 'Node (Docker/서버)', tauri: 'Tauri (데스크탑)', web: 'Web (브라우저)' };
-    const saveLabel = { tauri: '로컬 파일', account: '계정 동기화', local: '브라우저 IndexedDB/OPFS' };
-
-    let envNote = '';
-    if (r.info.saveMethod === 'account')
-      envNote = '계정 동기화 모드에서는 <strong>항상 gzip 블록 압축</strong>이 적용됩니다. Gzip 열이 실제 전송 크기에 가깝습니다.';
-    else if (r.info.platform === 'node')
-      envNote = 'Node/Docker 환경에서는 HTTP POST로 <code>/api/write</code>에 전송됩니다. 원본 크기 기준입니다.';
-    else if (r.info.saveMethod === 'local')
-      envNote = '브라우저 로컬 모드: IndexedDB/OPFS에 저장. 네트워크 전송 없음.';
-    else if (r.info.platform === 'tauri')
-      envNote = 'Tauri 데스크탑: 로컬 파일로 저장. 네트워크 전송 없음.';
-
     const blocksRows = r.blocks
       .map(
         (b) =>
-          '<tr' + (b.partial ? ' class="partial"' : '') + '>' +
-          '<td>' + b.name + (b.partial ? ' <span class="tag warn">부분</span>' : '') + '</td>' +
+          '<tr>' +
+          '<td>' + b.name + '</td>' +
           '<td class="n">' + fmt(b.raw) + '</td>' +
           '<td class="n">' + fmt(b.gz) + '</td>' +
           '<td class="n">' + pct(b.gz, b.raw) + '</td>' +
@@ -271,20 +199,19 @@
     if (r.chars.length > charLimit)
       charRows += '<tr><td colspan="5" class="more">...외 ' + (r.chars.length - charLimit) + '개</td></tr>';
 
-    const missingHTML = MISSING.map(
-      (m) =>
-        '<div class="mg">' +
-        '<div class="mc">' + m.cat + ' <span class="tag">' + m.keys.length + '개 키</span></div>' +
-        '<div class="mk">' + m.keys.map((k) => '<code>' + k + '</code>').join(' ') + '</div>' +
-        '<div class="mn">' + m.note + '</div>' +
-        '</div>'
-    ).join('');
-
-    const totalMissing = MISSING.reduce((s, m) => s + m.keys.length, 0);
+    // 환경별 추신
+    let envNote = '';
+    if (r.info.saveMethod === 'account')
+      envNote = '계정 동기화: 블록별 gzip 압축 적용. Gzip 열이 실제 전송 크기에 가깝습니다.';
+    else if (r.info.platform === 'node')
+      envNote = 'Node/Docker: 원본 열이 실제 전송 크기에 가깝습니다.';
+    else if (r.info.platform === 'tauri')
+      envNote = 'Tauri: 로컬 파일 저장. 네트워크 전송 없음.';
+    else
+      envNote = '브라우저 로컬 저장. 네트워크 전송 없음.';
 
     document.getElementById('app').innerHTML =
       '<div class="hd">' +
-        '<h1>DB Size Estimator</h1>' +
         '<div class="ha">' +
           '<button id="b-ref" class="btn">&#8635; 새로고침</button>' +
           '<button id="b-cls" class="btn bc">&times;</button>' +
@@ -292,30 +219,17 @@
       '</div>' +
 
       '<section class="c">' +
-        '<h2>환경 정보</h2>' +
-        '<div class="eg">' +
-          '<div><span class="lb">Platform</span><span class="vl">' + (envLabel[r.info.platform] || r.info.platform) + '</span></div>' +
-          '<div><span class="lb">Save Method</span><span class="vl">' + (saveLabel[r.info.saveMethod] || r.info.saveMethod) + '</span></div>' +
-          '<div><span class="lb">Plugin API</span><span class="vl">v' + r.info.apiVersion + '</span></div>' +
-        '</div>' +
-        (envNote ? '<p class="en">' + envNote + '</p>' : '') +
-      '</section>' +
-
-      '<section class="c">' +
-        '<h2>추산 요약</h2>' +
         '<div class="sg">' +
           '<div class="si"><div class="sv">' + fmt(r.totals.raw) + '</div><div class="sl">원본</div></div>' +
           '<div class="si ac"><div class="sv">' + fmt(r.totals.gz) + '</div><div class="sl">Gzip</div></div>' +
           '<div class="si"><div class="sv">' + pct(r.totals.gz, r.totals.raw) + '</div><div class="sl">압축률</div></div>' +
         '</div>' +
-        '<p class="wn">접근 가능한 화이트리스트 데이터만 포함한 추산치입니다. ' +
-          '접근 불가 키 ' + totalMissing + '개와 botPresets 블록이 누락되어 실제 database.bin은 이보다 큽니다.</p>' +
       '</section>' +
 
       '<section class="c">' +
         '<h2>RisuSave 블록 구조</h2>' +
         '<table>' +
-          '<thead><tr><th>블록</th><th>원본</th><th>Gzip</th><th>압축률</th></tr></thead>' +
+          '<thead><tr><th>블록</th><th class="n">원본</th><th class="n">Gzip</th><th class="n">압축률</th></tr></thead>' +
           '<tbody>' + blocksRows +
             '<tr class="tt"><td>합계 (추산)</td><td class="n">' + fmt(r.totals.raw) + '</td>' +
             '<td class="n">' + fmt(r.totals.gz) + '</td>' +
@@ -328,7 +242,7 @@
         '<h2>Root 키별 사이즈</h2>' +
         (r.rootKeys.length > 0
           ? '<table>' +
-              '<thead><tr><th>키</th><th>원본</th><th>Gzip</th><th>압축률</th></tr></thead>' +
+              '<thead><tr><th>키</th><th class="n">원본</th><th class="n">Gzip</th><th class="n">압축률</th></tr></thead>' +
               '<tbody>' + rootRows + '</tbody>' +
             '</table>'
           : '<p class="mt">접근 가능한 키 중 5B 이상인 데이터가 없습니다.</p>') +
@@ -339,29 +253,14 @@
         '<div id="cd" class="cl">' +
           (r.chars.length > 0
             ? '<table>' +
-                '<thead><tr><th>이름</th><th>채팅</th><th>메시지</th><th>원본</th><th>Gzip</th></tr></thead>' +
+                '<thead><tr><th>이름</th><th class="n">채팅</th><th class="n">메시지</th><th class="n">원본</th><th class="n">Gzip</th></tr></thead>' +
                 '<tbody>' + charRows + '</tbody>' +
               '</table>'
             : '<p class="mt">캐릭터가 없습니다.</p>') +
         '</div>' +
       '</section>' +
 
-      '<section class="c">' +
-        '<h2>접근 불가 데이터 (누락)</h2>' +
-        '<p class="mt">플러그인 화이트리스트에 포함되지 않아 추산에서 빠진 키들입니다. ' +
-          '이 데이터는 실제 database.bin의 Root 블록 또는 별도 블록에 포함됩니다.</p>' +
-        missingHTML +
-      '</section>' +
-
-      '<section class="c note">' +
-        '<h2>참고</h2>' +
-        '<ul>' +
-          '<li>Remote 캐릭터: 일부 캐릭터는 별도 파일(<code>remotes/{chaId}.local.bin</code>)로 분리 저장될 수 있습니다. ' +
-            '이 경우 메인 database.bin에는 포인터만 남아 실제 크기는 더 작을 수 있습니다.</li>' +
-          '<li>에셋(이미지 등)은 별도 저장되므로 이 추산에 포함되지 않습니다.</li>' +
-          '<li>Gzip 크기는 RisuSave의 블록별 개별 압축을 시뮬레이션한 것입니다.</li>' +
-        '</ul>' +
-      '</section>';
+      '<p class="fn">' + envNote + ' 화이트리스트 외 데이터는 추산에 미포함.</p>';
 
     // ── events ──
     document.getElementById('b-cls').addEventListener('click', () => risuai.hideContainer());
@@ -383,11 +282,14 @@
 
   const CSS = [
     '*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }',
-    'body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#0d1117; color:#c9d1d9; padding:20px; line-height:1.6; }',
-    '#app { max-width:820px; margin:0 auto; padding-bottom:40px; }',
+    'html { background:transparent; }',
+    'body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:rgba(0,0,0,0.55); color:#c9d1d9; line-height:1.6; min-height:100vh; display:flex; align-items:flex-start; justify-content:center; padding:5vh 20px; }',
+    '#app { background:#0d1117; max-width:820px; width:100%; border-radius:12px; border:1px solid #30363d; box-shadow:0 16px 48px rgba(0,0,0,0.4); padding:24px; max-height:90vh; overflow-y:auto; }',
+    '#app::-webkit-scrollbar { width:8px; }',
+    '#app::-webkit-scrollbar-track { background:transparent; }',
+    '#app::-webkit-scrollbar-thumb { background:#30363d; border-radius:4px; }',
 
-    '.hd { display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; padding-bottom:16px; border-bottom:1px solid #21262d; }',
-    '.hd h1 { font-size:1.35em; color:#f0f6fc; }',
+    '.hd { display:flex; justify-content:flex-end; align-items:center; margin-bottom:16px; }',
     '.ha { display:flex; gap:8px; }',
     '.btn { background:#21262d; border:1px solid #30363d; color:#c9d1d9; padding:6px 14px; border-radius:6px; cursor:pointer; font-size:.9em; }',
     '.btn:hover { background:#30363d; }',
@@ -401,50 +303,38 @@
 
     'table { width:100%; border-collapse:collapse; font-size:.88em; }',
     'th { text-align:left; padding:8px 10px; border-bottom:1px solid #30363d; color:#8b949e; font-weight:600; }',
+    'th.n { text-align:right; }',
     'td { padding:6px 10px; border-bottom:1px solid #161b22; }',
     'tbody tr:hover { background:#1c2128; }',
     '.n { text-align:right; font-variant-numeric:tabular-nums; }',
     'tr.tt { font-weight:700; }',
     'tr.tt td { border-top:2px solid #30363d; color:#f0f6fc; padding-top:10px; }',
-    'tr.partial td { color:#e3b341; }',
 
     'code { background:#1c2128; padding:2px 6px; border-radius:4px; font-size:.86em; color:#79c0ff; }',
     '.tag { display:inline-block; padding:1px 8px; border-radius:10px; font-size:.78em; margin-left:4px; background:#1f6feb33; color:#58a6ff; }',
     '.tag.warn { background:#e3b34133; color:#e3b341; }',
-
-    '.eg { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }',
-    '.eg>div { background:#0d1117; padding:12px; border-radius:6px; text-align:center; }',
-    '.lb { display:block; font-size:.78em; color:#8b949e; }',
-    '.vl { display:block; font-size:.95em; color:#f0f6fc; margin-top:4px; }',
-    '.en { margin-top:12px; padding:10px 14px; background:#0d1117; border-left:3px solid #1f6feb; border-radius:4px; font-size:.88em; }',
 
     '.sg { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; }',
     '.si { text-align:center; padding:16px; background:#0d1117; border-radius:8px; }',
     '.si.ac { background:#1f6feb1a; border:1px solid #1f6feb44; }',
     '.sv { font-size:1.5em; font-weight:700; color:#f0f6fc; }',
     '.sl { font-size:.82em; color:#8b949e; margin-top:4px; }',
-    '.wn { margin-top:14px; padding:10px 14px; background:#f851491a; border-radius:6px; font-size:.85em; color:#f85149; }',
-
     '.tg { cursor:pointer; user-select:none; }',
     '.tg:hover { color:#58a6ff; }',
     '.cl { display:none; }',
 
-    '.mg { padding:12px; margin-bottom:8px; background:#0d1117; border-radius:6px; }',
-    '.mc { font-weight:600; color:#f0f6fc; margin-bottom:6px; }',
-    '.mk { margin-bottom:6px; line-height:2.2; }',
-    '.mk code { margin-right:4px; }',
-    '.mn { font-size:.84em; color:#8b949e; }',
-
+    '.fn { font-size:.82em; color:#8b949e; text-align:center; margin-top:4px; }',
     '.mt { font-size:.9em; color:#8b949e; }',
     '.more { text-align:center; color:#8b949e; font-style:italic; }',
     '.loading { text-align:center; padding:80px 20px; font-size:1.1em; color:#8b949e; }',
     '.err { text-align:center; padding:80px 20px; color:#f85149; font-size:1.1em; }',
 
     '@media(max-width:640px) {',
+    '  body { padding:0; background:#0d1117; }',
+    '  #app { border-radius:0; max-height:none; border:none; box-shadow:none; }',
     '  .eg,.sg { grid-template-columns:1fr; }',
     '  table { font-size:.8em; }',
     '  td,th { padding:4px 6px; }',
-    '  body { padding:12px; }',
     '}',
   ].join('\n');
 
@@ -458,13 +348,17 @@
       document.head.appendChild(s);
     }
     document.body.innerHTML = '<div id="app"></div>';
+
+    // backdrop 클릭 시 닫기 (모달 바깥 영역)
+    document.body.addEventListener('click', (e) => {
+      if (e.target === document.body) risuai.hideContainer();
+    });
   }
 
   function showLoadingWithClose(msg) {
     const app = document.getElementById('app');
     app.innerHTML =
       '<div class="hd">' +
-        '<h1>DB Size Estimator</h1>' +
         '<div class="ha"><button id="b-cls-l" class="btn bc">&times;</button></div>' +
       '</div>' +
       '<p id="pg" class="loading">' + esc(msg) + '</p>';
