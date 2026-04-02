@@ -48,7 +48,7 @@ npx tsc --noEmit  # 타입 체크만
 
 - **화이트리스트 제한**: `getDatabase()`는 24개 키만 반환한다. API 키, 프롬프트, botPresets, 글로벌 로어북 등은 접근 불가하므로 추산에서 누락된다.
 - **database.bin 직접 접근 불가**: 파일시스템, IndexedDB, 백업 API 모두 차단. 파싱된 JS 객체만 접근 가능.
-- **Remote 캐릭터 미감지**: 별도 파일로 분리 저장된 캐릭터는 감지 불가하여 실제보다 크게 추산될 수 있다.
+- **Remote 캐릭터 미감지**: `enableRemoteSaving`이 `allowedDbKeys` 화이트리스트에 없어 직접 감지 불가. "노드 (Remote)" 탭으로 REMOTE 참조 블록 크기를 시뮬레이션하여 대응.
 - **모달 z-index**: 호스트가 `z-index: 1000`을 강제하므로, 내부 CSS로 반투명 backdrop + 가운데 박스를 시뮬레이션한다.
 
 ## 백업/복원 (backup.ts)

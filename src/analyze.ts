@@ -65,6 +65,10 @@ export async function analyze(
       const id: string = c.chaId || 'char_' + i;
       const oh = blockHead(id);
 
+      // enableRemoteSaving 시 database.bin에 들어가는 REMOTE 참조 블록 크기
+      const refJson = JSON.stringify({ v: 1, type: 2, name: id });
+      const remoteRefSize = new TextEncoder().encode(refJson).byteLength + oh;
+
       let chatCount = 0;
       let msgCount = 0;
       if (Array.isArray(c.chats)) {
@@ -102,6 +106,7 @@ export async function analyze(
           assets: assetsSize,
           other: Math.max(0, raw - chatsSize - lorebookSize - assetsSize),
         },
+        remoteRefSize,
       });
       charRaw += raw + oh;
       charGz += gz + oh;
@@ -109,6 +114,7 @@ export async function analyze(
       result.chars.push({
         name: '[오류] char_' + i, raw: 0, gz: 0, chatCount: 0, msgCount: 0,
         breakdown: { chats: 0, lorebook: 0, assets: 0, other: 0 },
+        remoteRefSize: 0,
       });
     }
   }

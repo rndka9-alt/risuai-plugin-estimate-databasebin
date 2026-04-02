@@ -30,6 +30,7 @@ export interface CharInfo extends SizeEntry {
   chatCount: number;
   msgCount: number;
   breakdown: CharBreakdown;
+  remoteRefSize: number;
 }
 
 export interface RuntimeInfo {
@@ -46,4 +47,4 @@ export interface AnalysisResult {
   totals: SizeEntry;
 }
 
-export type EnvMode = 'node' | 'web' | 'local';
+export type EnvMode = 'node' | 'node-remote' | 'web' | 'local';

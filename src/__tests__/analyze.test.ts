@@ -81,6 +81,21 @@ describe('analyze — CharInfo.breakdown', () => {
     expect(bd.chats + bd.lorebook + bd.assets + bd.other).toBe(c.raw - headerSize);
   });
 
+  it('remoteRefSize가 REMOTE 참조 블록 크기를 반영', async () => {
+    const db = mockDb([{
+      chaId: 'test-char-id',
+      data: { name: 'Test' },
+      chats: [],
+    }]);
+    const r = await analyze(db, info, noop);
+    const c = r.chars[0];
+    const refJson = JSON.stringify({ v: 1, type: 2, name: 'test-char-id' });
+    const enc = new TextEncoder();
+    const expected = enc.encode(refJson).byteLength + 7 + enc.encode('test-char-id').byteLength;
+    expect(c.remoteRefSize).toBe(expected);
+    expect(c.remoteRefSize).toBeLessThan(c.raw);
+  });
+
   it('오류 발생 시 breakdown은 전부 0', async () => {
     // JSON.stringify가 실패하도록 순환 참조 생성
     const circular: any = { chaId: 'bad', chats: [] };
@@ -90,5 +105,6 @@ describe('analyze — CharInfo.breakdown', () => {
     expect(r.chars[0].name).toMatch(/오류/);
     const bd = r.chars[0].breakdown;
     expect(bd.chats + bd.lorebook + bd.assets + bd.other).toBe(0);
+    expect(r.chars[0].remoteRefSize).toBe(0);
   });
 });

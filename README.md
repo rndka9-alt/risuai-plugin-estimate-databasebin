@@ -7,7 +7,8 @@ RisuAI 플러그인. 서버에 전송되는 `database.bin` 용량을 추산합�
 - RisuSave 블록 포맷(Config / Root / Characters / Modules)을 시뮬레이션하여 원본·gzip 크기 계산
 - 블록별 비중을 누적 바 차트로 시각화
 - Root 키·캐릭터별 Top 5 용량 표시
-- 환경별(노드/웹/로컬) 토글로 기준 전환 — 열 때 현재 환경 자동 선택
+- 환경별(노드/노드 Remote/웹/로컬) 토글로 기준 전환 — 열 때 현재 환경 자동 선택
+- `enableRemoteSaving` 적용 시 database.bin 크기 변화를 "노드 (Remote)" 탭으로 확인 가능
 - RisuAI 테마 색상 자동 적용
 
 ## 설치
@@ -19,7 +20,7 @@ RisuAI 플러그인. 서버에 전송되는 `database.bin` 용량을 추산합�
 ## 제한사항
 
 - 플러그인 API 화이트리스트(24개 키)만 접근 가능. API 키, 프롬프트, botPresets, 글로벌 로어북 등은 추산에 미포함.
-- Remote 캐릭터(별도 파일 분리 저장)는 감지 불가하여 실제보다 크게 추산될 수 있음.
+- `enableRemoteSaving` 상태는 플러그인 API 화이트리스트에 없어 직접 감지 불가. "노드 (Remote)" 탭으로 수동 전환하여 확인.
 - 에셋(이미지 등)은 별도 저장되므로 추산에 미포함.
 
 ## 요구사항

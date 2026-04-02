@@ -93,39 +93,58 @@ export function envModeFromInfo(info: RuntimeInfo): EnvMode {
 
 const ENV_NOTES: Record<EnvMode, string> = {
   node: 'Node/Docker: 원본 크기가 실제 저장 크기에 가깝습니다.',
+  'node-remote': 'Node/Docker + Remote Saving: 캐릭터가 remotes/ 디렉터리에 개별 파일로 분리됩니다.',
   web: '계정 동기화: Gzip 크기가 실제 전송 크기에 가깝습니다.',
   local: '로컬 저장: 원본 크기가 실제 저장 크기에 가깝습니다.',
 };
 
 const ENV_LABELS: [EnvMode, string][] = [
-  ['node', '노드 기준'],
-  ['web', '웹 기준'],
-  ['local', '로컬 기준'],
+  ['node', '노드'],
+  ['node-remote', '노드 (Remote)'],
+  ['web', '웹'],
+  ['local', '로컬'],
 ];
 
 // ── 메인 렌더 ─────────────────────────────────────────
 
 export function render(r: AnalysisResult, onRun: (mode: EnvMode) => Promise<void>, mode: EnvMode): void {
   const COLORS = ['#6366f1', '#f59e0b', '#10b981', '#8b5cf6'];
+  const isRemoteMode = mode === 'node-remote';
   const isGzPrimary = mode === 'web';
   const valKey: 'raw' | 'gz' = isGzPrimary ? 'gz' : 'raw';
 
-  const totalRaw = r.totals.raw;
-  const totalGz = r.totals.gz;
+  let totalRaw = r.totals.raw;
+  let totalGz = r.totals.gz;
+  let remoteRefTotal = 0;
+  if (isRemoteMode) {
+    remoteRefTotal = r.chars.reduce((s, c) => s + c.remoteRefSize, 0);
+    const fullCharRaw = r.chars.reduce((s, c) => s + c.raw, 0);
+    const fullCharGz = r.chars.reduce((s, c) => s + c.gz, 0);
+    totalRaw = totalRaw - fullCharRaw + remoteRefTotal;
+    totalGz = totalGz - fullCharGz + remoteRefTotal;
+  }
   const primaryTotal = isGzPrimary ? totalGz : totalRaw;
   const savePct = totalRaw > 0 ? ((1 - totalGz / totalRaw) * 100) : 0;
 
-  const summaryLabel = isGzPrimary
-    ? savePct.toFixed(1) + '% 절감 (원본 ' + fmt(totalRaw) + ')'
-    : 'Gzip 압축 시 ' + fmt(totalGz) + ' (' + savePct.toFixed(1) + '% 절감)';
+  let summaryLabel: string;
+  if (isRemoteMode) {
+    summaryLabel = 'Remote 미적용 시 ' + fmt(r.totals.raw) + ' · 캐릭터는 개별 파일 저장';
+  } else if (isGzPrimary) {
+    summaryLabel = savePct.toFixed(1) + '% 절감 (원본 ' + fmt(totalRaw) + ')';
+  } else {
+    summaryLabel = 'Gzip 압축 시 ' + fmt(totalGz) + ' (' + savePct.toFixed(1) + '% 절감)';
+  }
 
   // 100B 미만 블록 제거(Config 등), 블록명에서 부가 정보 제거
   const blocks = r.blocks
-    .filter(b => b.raw >= 100)
+    .filter(b => b.raw >= 100 || (isRemoteMode && b.name.startsWith('Characters')))
     .map(b => {
+      const isCharBlock = isRemoteMode && b.name.startsWith('Characters');
+      const raw = isCharBlock ? remoteRefTotal : b.raw;
+      const gz = isCharBlock ? remoteRefTotal : b.gz;
       const name = b.name.replace(/ \(\d+개\)/, '').replace(/ \(접근 가능 부분\)/, '');
-      const val = isGzPrimary ? b.gz : b.raw;
-      return { name, raw: b.raw, gz: b.gz, pct: primaryTotal > 0 ? (val / primaryTotal * 100) : 0 };
+      const val = isGzPrimary ? gz : raw;
+      return { name, raw, gz, pct: primaryTotal > 0 ? (val / primaryTotal * 100) : 0 };
     });
 
   // 범례에 표시할 단위 통일 — 가장 큰 블록 기준
@@ -157,6 +176,13 @@ export function render(r: AnalysisResult, onRun: (mode: EnvMode) => Promise<void
 
   const detH: [string, number?][] = [['블록'], ['원본', 1], ['Gzip', 1], ['압축률', 1]];
 
+  // Remote 모드에서 Characters 블록을 참조 크기로 대체
+  const detBlocks = isRemoteMode
+    ? r.blocks.map(b => b.name.startsWith('Characters')
+      ? { name: b.name, raw: remoteRefTotal, gz: remoteRefTotal }
+      : b)
+    : r.blocks;
+
   // 환경 토글 버튼
   const toggleBtns = ENV_LABELS.map(([m, label]) => {
     const active = m === mode ? ' env-active' : '';
@@ -175,14 +201,14 @@ export function render(r: AnalysisResult, onRun: (mode: EnvMode) => Promise<void
     card('<div class="stack">' + stackSegs + '</div><div class="stack-leg">' + legend + '</div>') +
 
     (sortedRootKeys.length > 0 ? card(tbl([['키'], ['크기', 1]], topN(sortedRootKeys, 5, 'key', valKey, 1024)), 'Root 상위') : '') +
-    (sortedChars.length > 0 ? card(tbl([['이름'], ['크기', 1]], topN(sortedChars, 5, 'name', valKey)), '캐릭터 상위') : '') +
+    (sortedChars.length > 0 ? card(tbl([['이름'], ['크기', 1]], topN(sortedChars, 5, 'name', valKey)), isRemoteMode ? '캐릭터 상위 (개별 파일 크기)' : '캐릭터 상위') : '') +
 
     '<h2 id="dt" class="tg det-tg">상세 &#9656;</h2>' +
     '<div id="dd" class="cl">' +
-      card(tbl(detH, detailRows(r.blocks, 'name')), '블록', 'h3') +
+      card(tbl(detH, detailRows(detBlocks, 'name')), '블록', 'h3') +
       card(tbl([['키'], ['원본', 1], ['Gzip', 1], ['압축률', 1]], detailRows(r.rootKeys, 'key')), 'Root 키 전체', 'h3') +
       card(tbl([['이름'], ['원본', 1], ['Gzip', 1], ['압축률', 1]], charDetailRows(r.chars.slice(0, 50))) +
-        (r.chars.length > 50 ? '<p class="more">...외 ' + (r.chars.length - 50) + '개</p>' : ''), '캐릭터 전체', 'h3') +
+        (r.chars.length > 50 ? '<p class="more">...외 ' + (r.chars.length - 50) + '개</p>' : ''), isRemoteMode ? '캐릭터 전체 (개별 파일 크기)' : '캐릭터 전체', 'h3') +
     '</div>' +
 
     '<p class="fn">' + ENV_NOTES[mode] + ' 화이트리스트 외 데이터는 추산에 미포함.</p>' +
@@ -200,7 +226,7 @@ export function render(r: AnalysisResult, onRun: (mode: EnvMode) => Promise<void
   for (const btn of document.querySelectorAll('.env-btn')) {
     btn.addEventListener('click', () => {
       const env = btn.getAttribute('data-env');
-      if (env === 'node' || env === 'web' || env === 'local') {
+      if (env === 'node' || env === 'node-remote' || env === 'web' || env === 'local') {
         render(r, onRun, env);
       }
     });
