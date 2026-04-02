@@ -7,7 +7,7 @@ RisuAI 플러그인. 서버에 전송되는 `database.bin` 용량을 추산합�
 - RisuSave 블록 포맷(Config / Root / Characters / Modules)을 시뮬레이션하여 원본·gzip 크기 계산
 - 블록별 비중을 누적 바 차트로 시각화
 - Root 키·캐릭터별 Top 5 용량 표시
-- 환경(Node/Web/Tauri)에 따른 전송 크기 안내
+- 환경별(노드/웹/로컬) 토글로 기준 전환 — 열 때 현재 환경 자동 선택
 - RisuAI 테마 색상 자동 적용
 
 ## 설치

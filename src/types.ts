@@ -45,3 +45,5 @@ export interface AnalysisResult {
   chars: CharInfo[];
   totals: SizeEntry;
 }
+
+export type EnvMode = 'node' | 'web' | 'local';

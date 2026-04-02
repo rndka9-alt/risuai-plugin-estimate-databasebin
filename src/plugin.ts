@@ -1,8 +1,8 @@
-import type { RuntimeInfo } from './types';
+import type { RuntimeInfo, EnvMode } from './types';
 import { STYLES } from './constants';
 import { esc } from './utils';
 import { analyze } from './analyze';
-import { render } from './render';
+import { render, envModeFromInfo } from './render';
 import { applyTheme, resolveScheme } from './theme';
 import { openBackupUI } from './backup-ui';
 
@@ -31,19 +31,20 @@ function showLoadingWithClose(msg: string): void {
   document.getElementById('b-cls-l')!.addEventListener('click', () => risuai.hideContainer());
 }
 
-async function run(db: DatabaseSubset, info: RuntimeInfo): Promise<void> {
+async function run(db: DatabaseSubset, info: RuntimeInfo, modeOverride?: EnvMode): Promise<void> {
   showLoadingWithClose('분석 중...');
   try {
     const r = await analyze(db, info, (msg) => {
       const el = document.getElementById('pg');
       if (el) el.textContent = msg;
     });
-    render(r, async () => {
+    const mode = modeOverride ?? envModeFromInfo(info);
+    render(r, async (currentMode) => {
       const freshDb = await risuai.getDatabase();
       if (!freshDb) return;
       const freshInfo = await risuai.getRuntimeInfo();
-      await run(freshDb, freshInfo);
-    });
+      await run(freshDb, freshInfo, currentMode);
+    }, mode);
   } catch (e: unknown) {
     const pg = document.getElementById('pg');
     if (pg) {

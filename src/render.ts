@@ -1,4 +1,4 @@
-import type { AnalysisResult, SizeEntry, CharInfo } from './types';
+import type { AnalysisResult, SizeEntry, CharInfo, RuntimeInfo, EnvMode } from './types';
 import { fmt, pct, esc } from './utils';
 
 // ── HTML 빌더 헬퍼 ────────────────────────────────────
@@ -83,27 +83,57 @@ function charDetailRows(chars: CharInfo[]): string {
   }).join('');
 }
 
+// ── 환경 모드 ─────────────────────────────────────────
+
+export function envModeFromInfo(info: RuntimeInfo): EnvMode {
+  if (info.saveMethod === 'account') return 'web';
+  if (info.platform === 'node') return 'node';
+  return 'local';
+}
+
+const ENV_NOTES: Record<EnvMode, string> = {
+  node: 'Node/Docker: 원본 크기가 실제 저장 크기에 가깝습니다.',
+  web: '계정 동기화: Gzip 크기가 실제 전송 크기에 가깝습니다.',
+  local: '로컬 저장: 원본 크기가 실제 저장 크기에 가깝습니다.',
+};
+
+const ENV_LABELS: [EnvMode, string][] = [
+  ['node', '노드 기준'],
+  ['web', '웹 기준'],
+  ['local', '로컬 기준'],
+];
+
 // ── 메인 렌더 ─────────────────────────────────────────
 
-export function render(r: AnalysisResult, onRun: () => Promise<void>): void {
+export function render(r: AnalysisResult, onRun: (mode: EnvMode) => Promise<void>, mode: EnvMode): void {
   const COLORS = ['#6366f1', '#f59e0b', '#10b981', '#8b5cf6'];
+  const isGzPrimary = mode === 'web';
+  const valKey: 'raw' | 'gz' = isGzPrimary ? 'gz' : 'raw';
+
   const totalRaw = r.totals.raw;
-  const savePct = totalRaw > 0 ? ((1 - r.totals.gz / totalRaw) * 100) : 0;
+  const totalGz = r.totals.gz;
+  const primaryTotal = isGzPrimary ? totalGz : totalRaw;
+  const savePct = totalRaw > 0 ? ((1 - totalGz / totalRaw) * 100) : 0;
+
+  const summaryLabel = isGzPrimary
+    ? savePct.toFixed(1) + '% 절감 (원본 ' + fmt(totalRaw) + ')'
+    : 'Gzip 압축 시 ' + fmt(totalGz) + ' (' + savePct.toFixed(1) + '% 절감)';
 
   // 100B 미만 블록 제거(Config 등), 블록명에서 부가 정보 제거
   const blocks = r.blocks
     .filter(b => b.raw >= 100)
     .map(b => {
       const name = b.name.replace(/ \(\d+개\)/, '').replace(/ \(접근 가능 부분\)/, '');
-      return { name, raw: b.raw, gz: b.gz, pct: totalRaw > 0 ? (b.raw / totalRaw * 100) : 0 };
+      const val = isGzPrimary ? b.gz : b.raw;
+      return { name, raw: b.raw, gz: b.gz, pct: primaryTotal > 0 ? (val / primaryTotal * 100) : 0 };
     });
 
   // 범례에 표시할 단위 통일 — 가장 큰 블록 기준
-  const maxRaw = blocks.length > 0 ? blocks[0].raw : 0;
+  const maxVal = blocks.reduce((m, b) => Math.max(m, isGzPrimary ? b.gz : b.raw), 0);
   let unit: string, divisor: number;
-  if (maxRaw >= 1073741824) { unit = 'GB'; divisor = 1073741824; }
-  else if (maxRaw >= 1048576) { unit = 'MB'; divisor = 1048576; }
-  else if (maxRaw >= 1024) { unit = 'KB'; divisor = 1024; }
+  if (maxVal >= 1073741824) { unit = 'GB'; divisor = 1073741824; }
+  else if (maxVal >= 1048576) { unit = 'MB'; divisor = 1048576; }
+  else if (maxVal >= 1024) { unit = 'KB'; divisor = 1024; }
   else { unit = 'B'; divisor = 1; }
   const fmtU = (b: number) => (b / divisor).toFixed(2) + ' ' + unit;
 
@@ -113,14 +143,25 @@ export function render(r: AnalysisResult, onRun: () => Promise<void>): void {
   }).join('');
 
   const legend = blocks.map((b, i) => {
-    return '<span class="leg"><span class="dot" style="background:' + COLORS[i % COLORS.length] + '"></span>' + b.name + ' ' + fmtU(b.raw) + '</span>';
+    const val = isGzPrimary ? b.gz : b.raw;
+    return '<span class="leg"><span class="dot" style="background:' + COLORS[i % COLORS.length] + '"></span>' + b.name + ' ' + fmtU(val) + '</span>';
   }).join('');
 
-  const envNote = r.info.saveMethod === 'account' ? '계정 동기화: Gzip 크기가 실제 전송 크기에 가깝습니다.'
-    : r.info.platform === 'node' ? 'Node/Docker: 원본 크기가 실제 전송 크기에 가깝습니다.'
-    : r.info.platform === 'tauri' ? 'Tauri: 로컬 파일 저장.' : '브라우저 로컬 저장.';
+  // 환경 모드에 따라 topN 정렬 기준 변경
+  const sortedRootKeys = isGzPrimary
+    ? [...r.rootKeys].sort((a, b) => b.gz - a.gz)
+    : r.rootKeys;
+  const sortedChars = isGzPrimary
+    ? [...r.chars].sort((a, b) => b.gz - a.gz)
+    : r.chars;
 
   const detH: [string, number?][] = [['블록'], ['원본', 1], ['Gzip', 1], ['압축률', 1]];
+
+  // 환경 토글 버튼
+  const toggleBtns = ENV_LABELS.map(([m, label]) => {
+    const active = m === mode ? ' env-active' : '';
+    return '<button class="env-btn' + active + '" data-env="' + m + '">' + label + '</button>';
+  }).join('');
 
   document.getElementById('app')!.innerHTML =
     '<div class="hd"><div class="ha">' +
@@ -128,13 +169,13 @@ export function render(r: AnalysisResult, onRun: () => Promise<void>): void {
       '<button id="b-cls" class="btn bc">&times;</button>' +
     '</div></div>' +
 
-    '<div class="sum"><div class="sum-big">' + fmt(r.totals.gz) + '</div>' +
-    '<div class="sum-label">' + savePct.toFixed(1) + '% 절감 (원본 ' + fmt(totalRaw) + ')</div></div>' +
+    '<div class="sum"><div class="sum-big">' + fmt(primaryTotal) + '</div>' +
+    '<div class="sum-label">' + summaryLabel + '</div></div>' +
 
     card('<div class="stack">' + stackSegs + '</div><div class="stack-leg">' + legend + '</div>') +
 
-    (r.rootKeys.length > 0 ? card(tbl([['키'], ['크기', 1]], topN(r.rootKeys, 5, 'key', 'raw', 1024)), 'Root 상위') : '') +
-    (r.chars.length > 0 ? card(tbl([['이름'], ['크기', 1]], topN(r.chars, 5, 'name', 'raw')), '캐릭터 상위') : '') +
+    (sortedRootKeys.length > 0 ? card(tbl([['키'], ['크기', 1]], topN(sortedRootKeys, 5, 'key', valKey, 1024)), 'Root 상위') : '') +
+    (sortedChars.length > 0 ? card(tbl([['이름'], ['크기', 1]], topN(sortedChars, 5, 'name', valKey)), '캐릭터 상위') : '') +
 
     '<h2 id="dt" class="tg det-tg">상세 &#9656;</h2>' +
     '<div id="dd" class="cl">' +
@@ -144,15 +185,26 @@ export function render(r: AnalysisResult, onRun: () => Promise<void>): void {
         (r.chars.length > 50 ? '<p class="more">...외 ' + (r.chars.length - 50) + '개</p>' : ''), '캐릭터 전체', 'h3') +
     '</div>' +
 
-    '<p class="fn">' + envNote + ' 화이트리스트 외 데이터는 추산에 미포함.</p>';
+    '<p class="fn">' + ENV_NOTES[mode] + ' 화이트리스트 외 데이터는 추산에 미포함.</p>' +
+    '<div class="env-toggle">' + toggleBtns + '</div>';
 
   document.getElementById('b-cls')!.addEventListener('click', () => { risuai.hideContainer(); });
-  document.getElementById('b-ref')!.addEventListener('click', () => { onRun(); });
+  document.getElementById('b-ref')!.addEventListener('click', () => { onRun(mode); });
   document.getElementById('dt')!.addEventListener('click', () => {
     const d = document.getElementById('dd')!;
     const t = document.getElementById('dt')!;
     t.innerHTML = '상세 ' + (d.classList.toggle('cl') ? '&#9656;' : '&#9662;');
   });
+
+  // 환경 토글 클릭 → 해당 모드로 재렌더
+  for (const btn of document.querySelectorAll('.env-btn')) {
+    btn.addEventListener('click', () => {
+      const env = btn.getAttribute('data-env');
+      if (env === 'node' || env === 'web' || env === 'local') {
+        render(r, onRun, env);
+      }
+    });
+  }
 
   // 캐릭터 행 클릭 → breakdown 서브행 토글
   for (const row of document.querySelectorAll('.chr-row')) {
