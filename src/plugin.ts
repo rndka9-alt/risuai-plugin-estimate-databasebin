@@ -4,6 +4,7 @@ import { esc } from './utils';
 import { analyze } from './analyze';
 import { render } from './render';
 import { applyTheme, resolveScheme } from './theme';
+import { openBackupUI } from './backup-ui';
 
 function initDOM(): void {
   if (!document.getElementById('_ps')) {
@@ -73,6 +74,10 @@ async function open(): Promise<void> {
 
 // Settings 페이지에 메뉴 등록 + 언로드 시 정리
 (async () => {
-  const reg = await risuai.registerSetting('database.bin', open, '&#x1f4e6;', 'html');
-  risuai.onUnload(() => { risuai.unregisterUIPart(reg.id); });
+  const estimateReg = await risuai.registerSetting('database.bin', open, '&#x1f4e6;', 'html');
+  const backupReg = await risuai.registerSetting('백업/복원', openBackupUI, '&#x1f4be;', 'html');
+  risuai.onUnload(() => {
+    risuai.unregisterUIPart(estimateReg.id);
+    risuai.unregisterUIPart(backupReg.id);
+  });
 })();
