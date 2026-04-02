@@ -9,16 +9,28 @@ function $(id: string): HTMLElement | null {
   return document.getElementById(id);
 }
 
-/** data:image/... URL → Uint8Array. PNG가 아니면 undefined. */
-function dataUrlToPng(dataUrl: string): Uint8Array | undefined {
-  if (typeof dataUrl !== 'string') return undefined;
-  // data:image/png;base64,... 형태만 처리
-  const match = /^data:image\/png;base64,(.+)$/.exec(dataUrl);
-  if (!match) return undefined;
-  const binary = atob(match[1]);
-  const buf = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) buf[i] = binary.charCodeAt(i);
-  return buf;
+/** 모든 이미지 data URL → PNG Uint8Array. canvas를 거쳐 포맷 변환. */
+function imageDataUrlToPng(dataUrl: string): Promise<Uint8Array | undefined> {
+  if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) {
+    return Promise.resolve(undefined);
+  }
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth || img.width || 1;
+      canvas.height = img.naturalHeight || img.height || 1;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { resolve(undefined); return; }
+      ctx.drawImage(img, 0, 0);
+      canvas.toBlob(blob => {
+        if (!blob) { resolve(undefined); return; }
+        blob.arrayBuffer().then(buf => resolve(new Uint8Array(buf)));
+      }, 'image/png');
+    };
+    img.onerror = () => resolve(undefined);
+    img.src = dataUrl;
+  });
 }
 
 function uint8ToDataUrl(data: Uint8Array): string {
@@ -203,12 +215,12 @@ function bindBackup(chars: CharEntry[]): void {
         return;
       }
 
-      // 캐릭터 이미지 가져오기
+      // 캐릭터 이미지 → PNG 변환 (JPEG/WebP 등 모든 포맷 지원)
       let pngImage: Uint8Array | undefined;
       if (char.image) {
         try {
           const dataUrl = await risuai.readImage(char.image);
-          pngImage = dataUrlToPng(dataUrl);
+          pngImage = await imageDataUrlToPng(dataUrl);
         } catch { /* placeholder 사용 */ }
       }
 
