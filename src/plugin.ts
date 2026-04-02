@@ -1,4 +1,5 @@
-export {}; // top-level await를 위해 모듈로 선언
+// esbuild IIFE는 top-level await를 지원하지 않으므로,
+// 진입점만 async IIFE로 감싸서 해결 (하단 참조)
 
 // ── 내부 타입 ──────────────────────────────────────────
 
@@ -501,5 +502,7 @@ async function open(): Promise<void> {
 }
 
 // Settings 페이지에 메뉴 등록 + 언로드 시 정리
-const reg = await risuai.registerSetting('database.bin', open, '&#x1f4e6;', 'html');
-risuai.onUnload(() => { risuai.unregisterUIPart(reg.id); });
+(async () => {
+  const reg = await risuai.registerSetting('database.bin', open, '&#x1f4e6;', 'html');
+  risuai.onUnload(() => { risuai.unregisterUIPart(reg.id); });
+})();
