@@ -1,6 +1,6 @@
 import { STYLES } from './constants';
 import { esc } from './utils';
-import { createBackupPng, readBackupPng } from './backup';
+import { createBackupPng, readBackupPng, collectAssetPaths, remapAssetPaths } from './backup';
 import { applyTheme, resolveScheme } from './theme';
 
 // ── 헬퍼 ───────────────────────────────────────────────
@@ -223,16 +223,33 @@ function bindBackup(chars: CharEntry[]): void {
         return;
       }
 
-      // 캐릭터 이미지 → PNG 변환 (JPEG/WebP 등 모든 포맷 지원)
+      // 에셋 수집
+      const assetPaths = collectAssetPaths(char);
+      const assets: Record<string, string> = {};
       let pngImage: Uint8Array | undefined;
-      if (char.image) {
+
+      for (let ai = 0; ai < assetPaths.length; ai++) {
+        const status = $('bk-result');
+        if (status) {
+          status.innerHTML = '<div class="bk-status"><span class="bk-spinner"></span>에셋 읽는 중 (' + (ai + 1) + '/' + assetPaths.length + ')...</div>';
+        }
         try {
-          const dataUrl = await risuai.readImage(char.image);
-          pngImage = await imageDataUrlToPng(dataUrl);
+          const dataUrl = await risuai.readImage(assetPaths[ai]);
+          if (typeof dataUrl === 'string' && dataUrl) {
+            assets[assetPaths[ai]] = dataUrl;
+          }
+        } catch { /* 읽기 실패한 에셋은 건너뜀 */ }
+      }
+
+      // 메인 이미지를 PNG 썸네일로 변환
+      if (typeof char.image === 'string' && assets[char.image]) {
+        try {
+          pngImage = await imageDataUrlToPng(assets[char.image]);
         } catch { /* placeholder 사용 */ }
       }
 
-      const pngBytes = await createBackupPng(char, pngImage);
+      result.innerHTML = '<div class="bk-status"><span class="bk-spinner"></span>백업 PNG 생성 중...</div>';
+      const pngBytes = await createBackupPng(char, assets, pngImage);
       const charName = chars.find(c => c.index === idx)?.name ?? 'character';
       const fileName = charName.replace(/[/\\?%*:|"<>]/g, '_') + '.backup.png';
 
@@ -276,7 +293,8 @@ function bindRestore(): void {
       const png = new Uint8Array(arrayBuf);
       const backup = await readBackupPng(png);
 
-      if (!backup.hasFullBackup || !backup.character) {
+      const payload = backup.payload;
+      if (!backup.hasFullBackup || !payload) {
         const msg = backup.hasCharaChunk
           ? 'risubackup 데이터가 없습니다. RisuAI 표준 임포트를 사용하세요.'
           : '유효한 백업 데이터가 없는 파일입니다.';
@@ -284,7 +302,8 @@ function bindRestore(): void {
         return;
       }
 
-      const char = backup.character;
+      const char = payload.character;
+      const assetCount = Object.keys(payload.assets).length;
       const name: string = char.data?.name || char.name || '(이름 없음)';
       let chatCount = 0;
       let msgCount = 0;
@@ -300,13 +319,15 @@ function bindRestore(): void {
           '<div class="bk-preview-row"><span class="bk-preview-label">캐릭터</span><span>' + esc(name) + '</span></div>' +
           '<div class="bk-preview-row"><span class="bk-preview-label">채팅</span><span>' + chatCount + '개</span></div>' +
           '<div class="bk-preview-row"><span class="bk-preview-label">메시지</span><span>' + msgCount + '개</span></div>' +
+          '<div class="bk-preview-row"><span class="bk-preview-label">에셋</span><span>' + assetCount + '개</span></div>' +
+          '<div class="bk-preview-row"><span class="bk-preview-label">버전</span><span>v' + payload.version + '</span></div>' +
         '</div>' +
         '<button id="bk-do-restore" class="bk-btn bk-btn-danger">복원하기</button>' +
         '<div id="bk-restore-status"></div>';
 
       const restoreBtn = $('bk-do-restore');
       if (restoreBtn) {
-        restoreBtn.addEventListener('click', () => doRestore(char));
+        restoreBtn.addEventListener('click', () => doRestore(payload));
       }
 
     } catch (e: unknown) {
@@ -316,7 +337,7 @@ function bindRestore(): void {
   });
 }
 
-async function doRestore(char: any): Promise<void> {
+async function doRestore(payload: import('./backup').BackupPayload): Promise<void> {
   const statusEl = $('bk-restore-status');
   const restoreBtn = $('bk-do-restore');
 
@@ -324,6 +345,30 @@ async function doRestore(char: any): Promise<void> {
   if (restoreBtn) restoreBtn.setAttribute('disabled', '');
 
   try {
+    // 1. 에셋 복원 — saveAsset()으로 저장하고 새 경로 매핑
+    const assetEntries = Object.entries(payload.assets);
+    const pathMap: Record<string, string> = {};
+
+    for (let i = 0; i < assetEntries.length; i++) {
+      if (statusEl) {
+        statusEl.innerHTML = '<div class="bk-status"><span class="bk-spinner"></span>에셋 복원 중 (' + (i + 1) + '/' + assetEntries.length + ')...</div>';
+      }
+      const [oldPath, dataUrl] = assetEntries[i];
+      try {
+        const newPath = await risuai.saveAsset(dataUrl);
+        if (typeof newPath === 'string') {
+          pathMap[oldPath] = newPath;
+        }
+      } catch { /* 개별 에셋 실패 시 건너뜀 */ }
+    }
+
+    // 2. 캐릭터 객체의 에셋 경로를 새 경로로 교체
+    if (statusEl) {
+      statusEl.innerHTML = '<div class="bk-status"><span class="bk-spinner"></span>캐릭터 데이터 복원 중...</div>';
+    }
+    const restoredChar = remapAssetPaths(payload.character, pathMap);
+
+    // 3. DB에 캐릭터 추가
     const db = await risuai.getDatabase();
     if (!db) {
       if (statusEl) statusEl.innerHTML = '<div class="bk-status error">데이터베이스 접근 실패</div>';
@@ -331,12 +376,16 @@ async function doRestore(char: any): Promise<void> {
     }
 
     const characters = Array.isArray(db.characters) ? db.characters : [];
-    characters.push(char);
+    characters.push(restoredChar);
     db.characters = characters;
     await risuai.setDatabase(db);
 
+    const restored = Object.keys(pathMap).length;
+    const failed = assetEntries.length - restored;
+    const msg = '복원 완료! 채팅 + 에셋 ' + restored + '개 복원.' +
+      (failed > 0 ? ' (' + failed + '개 에셋 실패)' : '');
     if (statusEl) {
-      statusEl.innerHTML = '<div class="bk-status success">복원 완료! 채팅 포함 모든 데이터가 복원되었습니다.</div>';
+      statusEl.innerHTML = '<div class="bk-status success">' + esc(msg) + '</div>';
     }
   } catch (e: unknown) {
     if (statusEl) {

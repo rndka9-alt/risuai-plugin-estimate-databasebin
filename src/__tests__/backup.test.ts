@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createBackupPng, readBackupPng, parsePngTEXt } from '../backup';
+import { createBackupPng, readBackupPng, parsePngTEXt, collectAssetPaths, remapAssetPaths } from '../backup';
 
 // ── PNG 구조 검증 ──────────────────────────────────────
 
@@ -99,14 +99,14 @@ describe('parsePngTEXt', () => {
 describe('createBackupPng', () => {
   it('유효한 PNG 생성', async () => {
     const char = makeTestCharacter();
-    const png = await createBackupPng(char);
+    const png = await createBackupPng(char, {});
 
     expect(isPng(png)).toBe(true);
   });
 
   it('chara 청크와 risubackup 청크 모두 포함', async () => {
     const char = makeTestCharacter();
-    const png = await createBackupPng(char);
+    const png = await createBackupPng(char, {});
     const entries = parsePngTEXt(png);
 
     const keys = entries.map(e => e.key);
@@ -116,7 +116,7 @@ describe('createBackupPng', () => {
 
   it('IHDR → tEXt → IEND 순서 유지', async () => {
     const char = makeTestCharacter();
-    const png = await createBackupPng(char);
+    const png = await createBackupPng(char, {});
     const types = findChunkTypes(png);
 
     expect(types[0]).toBe('IHDR');
@@ -126,7 +126,7 @@ describe('createBackupPng', () => {
 
   it('chara 청크는 base64 인코딩된 JSON', async () => {
     const char = makeTestCharacter();
-    const png = await createBackupPng(char);
+    const png = await createBackupPng(char, {});
     const entries = parsePngTEXt(png);
     const charaEntry = entries.find(e => e.key === 'chara');
 
@@ -156,7 +156,7 @@ describe('createBackupPng', () => {
       0xae, 0x42, 0x60, 0x82,
     ]);
 
-    const png = await createBackupPng(char, customPng);
+    const png = await createBackupPng(char, {}, customPng);
     expect(isPng(png)).toBe(true);
     // IHDR이 보존되어야 함
     expect(findChunkTypes(png)[0]).toBe('IHDR');
@@ -168,30 +168,30 @@ describe('createBackupPng', () => {
 describe('readBackupPng', () => {
   it('createBackupPng → readBackupPng 라운드트립', async () => {
     const original = makeTestCharacter();
-    const png = await createBackupPng(original);
+    const png = await createBackupPng(original, {});
     const result = await readBackupPng(png);
 
     expect(result.hasCharaChunk).toBe(true);
     expect(result.hasFullBackup).toBe(true);
-    expect(result.character).not.toBeNull();
+    expect(result.payload?.character).not.toBeNull();
   });
 
   it('캐릭터 이름 보존', async () => {
     const original = makeTestCharacter({ name: '테스트 캐릭터' });
-    const png = await createBackupPng(original);
+    const png = await createBackupPng(original, {});
     const result = await readBackupPng(png);
 
-    expect(result.character?.name).toBe('테스트 캐릭터');
+    expect(result.payload?.character?.name).toBe('테스트 캐릭터');
   });
 
   it('채팅 메시지 보존', async () => {
     const original = makeTestCharacter();
-    const png = await createBackupPng(original);
+    const png = await createBackupPng(original, {});
     const result = await readBackupPng(png);
 
-    expect(result.character?.chats).toHaveLength(1);
-    expect(result.character?.chats[0].message).toHaveLength(3);
-    expect(result.character?.chats[0].message[0].data).toBe('Hello!');
+    expect(result.payload?.character?.chats).toHaveLength(1);
+    expect(result.payload?.character?.chats[0].message).toHaveLength(3);
+    expect(result.payload?.character?.chats[0].message[0].data).toBe('Hello!');
   });
 
   it('복수 채팅 세션 보존', async () => {
@@ -202,34 +202,34 @@ describe('readBackupPng', () => {
         { message: [{ role: 'char', data: 'Third chat' }], note: '', name: 'Chat 3', localLore: [] },
       ],
     });
-    const png = await createBackupPng(original);
+    const png = await createBackupPng(original, {});
     const result = await readBackupPng(png);
 
-    expect(result.character?.chats).toHaveLength(3);
+    expect(result.payload?.character?.chats).toHaveLength(3);
   });
 
   it('chaId 보존', async () => {
     const original = makeTestCharacter({ chaId: 'unique_id_12345' });
-    const png = await createBackupPng(original);
+    const png = await createBackupPng(original, {});
     const result = await readBackupPng(png);
 
-    expect(result.character?.chaId).toBe('unique_id_12345');
+    expect(result.payload?.character?.chaId).toBe('unique_id_12345');
   });
 
   it('빈 채팅 캐릭터도 처리', async () => {
     const original = makeTestCharacter({ chats: [] });
-    const png = await createBackupPng(original);
+    const png = await createBackupPng(original, {});
     const result = await readBackupPng(png);
 
-    expect(result.character?.chats).toHaveLength(0);
+    expect(result.payload?.character?.chats).toHaveLength(0);
   });
 
   it('그룹 캐릭터 보존', async () => {
     const original = makeTestCharacter({ type: 'group', name: 'Test Group' });
-    const png = await createBackupPng(original);
+    const png = await createBackupPng(original, {});
     const result = await readBackupPng(png);
 
-    expect(result.character?.type).toBe('group');
+    expect(result.payload?.character?.type).toBe('group');
   });
 });
 
@@ -238,7 +238,7 @@ describe('readBackupPng', () => {
 describe('V2 카드 호환성', () => {
   it('chara 청크에 spec과 data.name 포함', async () => {
     const char = makeTestCharacter({ name: 'Alice' });
-    const png = await createBackupPng(char);
+    const png = await createBackupPng(char, {});
     const entries = parsePngTEXt(png);
     const charaEntry = entries.find(e => e.key === 'chara');
 
@@ -260,7 +260,7 @@ describe('V2 카드 호환성', () => {
       firstMessage: 'Greetings!',
       systemPrompt: 'You are a hero.',
     });
-    const png = await createBackupPng(char);
+    const png = await createBackupPng(char, {});
     const entries = parsePngTEXt(png);
     const charaEntry = entries.find(e => e.key === 'chara');
     if (!charaEntry) return;
@@ -280,7 +280,7 @@ describe('V2 카드 호환성', () => {
         { key: ['elf'], content: 'Elves are immortal', comment: 'lore2', selective: true, secondkey: ['immortal'], alwaysActive: true, insertorder: 1 },
       ],
     });
-    const png = await createBackupPng(char);
+    const png = await createBackupPng(char, {});
     const entries = parsePngTEXt(png);
     const charaEntry = entries.find(e => e.key === 'chara');
     if (!charaEntry) return;
@@ -298,7 +298,7 @@ describe('V2 카드 호환성', () => {
       viewScreen: 'emotion',
       license: 'MIT',
     });
-    const png = await createBackupPng(char);
+    const png = await createBackupPng(char, {});
     const entries = parsePngTEXt(png);
     const charaEntry = entries.find(e => e.key === 'chara');
     if (!charaEntry) return;
@@ -315,10 +315,10 @@ describe('V2 카드 호환성', () => {
 describe('엣지 케이스', () => {
   it('특수문자 포함 캐릭터 이름', async () => {
     const original = makeTestCharacter({ name: '캐릭터<"&>이름' });
-    const png = await createBackupPng(original);
+    const png = await createBackupPng(original, {});
     const result = await readBackupPng(png);
 
-    expect(result.character?.name).toBe('캐릭터<"&>이름');
+    expect(result.payload?.character?.name).toBe('캐릭터<"&>이름');
   });
 
   it('이모지 포함 데이터', async () => {
@@ -326,11 +326,11 @@ describe('엣지 케이스', () => {
       name: '🎭 Drama Bot',
       desc: '🌟 A dramatic character 🎪',
     });
-    const png = await createBackupPng(original);
+    const png = await createBackupPng(original, {});
     const result = await readBackupPng(png);
 
-    expect(result.character?.name).toBe('🎭 Drama Bot');
-    expect(result.character?.desc).toBe('🌟 A dramatic character 🎪');
+    expect(result.payload?.character?.name).toBe('🎭 Drama Bot');
+    expect(result.payload?.character?.desc).toBe('🌟 A dramatic character 🎪');
   });
 
   it('큰 채팅 데이터 처리', async () => {
@@ -342,10 +342,10 @@ describe('엣지 케이스', () => {
       chats: [{ message: messages, note: '', name: 'Big Chat', localLore: [] }],
     });
 
-    const png = await createBackupPng(original);
+    const png = await createBackupPng(original, {});
     const result = await readBackupPng(png);
 
-    expect(result.character?.chats[0].message).toHaveLength(500);
+    expect(result.payload?.character?.chats[0].message).toHaveLength(500);
   });
 
   it('risubackup 없는 PNG에서 character가 null', async () => {
@@ -362,8 +362,110 @@ describe('엣지 케이스', () => {
     ]);
     const result = await readBackupPng(minPng);
 
-    expect(result.character).toBeNull();
+    expect(result.payload).toBeNull();
     expect(result.hasFullBackup).toBe(false);
     expect(result.hasCharaChunk).toBe(false);
+  });
+});
+
+// ── 에셋 수집/매핑 ────────────────────────────────────
+
+describe('collectAssetPaths', () => {
+  it('image 필드 수집', () => {
+    const char = makeTestCharacter({ image: 'assets/abc123' });
+    expect(collectAssetPaths(char)).toContain('assets/abc123');
+  });
+
+  it('emotionImages 수집', () => {
+    const char = makeTestCharacter({
+      emotionImages: [['happy', 'assets/happy.png'], ['sad', 'assets/sad.png']],
+    });
+    const paths = collectAssetPaths(char);
+    expect(paths).toContain('assets/happy.png');
+    expect(paths).toContain('assets/sad.png');
+  });
+
+  it('additionalAssets 수집', () => {
+    const char = makeTestCharacter({
+      additionalAssets: [['bg', 'assets/bg.png', 'image']],
+    });
+    expect(collectAssetPaths(char)).toContain('assets/bg.png');
+  });
+
+  it('ccAssets 수집', () => {
+    const char = makeTestCharacter({
+      ccAssets: [{ type: 'icon', uri: 'assets/icon.png', name: 'icon', ext: 'png' }],
+    });
+    expect(collectAssetPaths(char)).toContain('assets/icon.png');
+  });
+
+  it('중복 경로 제거', () => {
+    const char = makeTestCharacter({
+      image: 'assets/same.png',
+      emotionImages: [['emo', 'assets/same.png']],
+    });
+    const paths = collectAssetPaths(char);
+    expect(paths.filter(p => p === 'assets/same.png')).toHaveLength(1);
+  });
+
+  it('빈 필드 무시', () => {
+    const char = makeTestCharacter({ image: '', emotionImages: [], additionalAssets: [] });
+    expect(collectAssetPaths(char)).toHaveLength(0);
+  });
+});
+
+describe('remapAssetPaths', () => {
+  it('image 경로 교체', () => {
+    const char = makeTestCharacter({ image: 'old/path' });
+    const result = remapAssetPaths(char, { 'old/path': 'new/path' });
+    expect(result.image).toBe('new/path');
+  });
+
+  it('emotionImages 경로 교체', () => {
+    const char = makeTestCharacter({
+      emotionImages: [['happy', 'old/happy']],
+    });
+    const result = remapAssetPaths(char, { 'old/happy': 'new/happy' });
+    expect(result.emotionImages[0][1]).toBe('new/happy');
+  });
+
+  it('원본 객체를 변경하지 않음', () => {
+    const char = makeTestCharacter({ image: 'old/path' });
+    remapAssetPaths(char, { 'old/path': 'new/path' });
+    expect(char.image).toBe('old/path');
+  });
+
+  it('매핑에 없는 경로는 유지', () => {
+    const char = makeTestCharacter({ image: 'keep/this' });
+    const result = remapAssetPaths(char, {});
+    expect(result.image).toBe('keep/this');
+  });
+});
+
+describe('에셋 포함 라운드트립', () => {
+  it('에셋이 백업 페이로드에 포함됨', async () => {
+    const char = makeTestCharacter({ image: 'assets/img1' });
+    const assets = { 'assets/img1': 'data:image/png;base64,abc123' };
+    const png = await createBackupPng(char, assets);
+    const result = await readBackupPng(png);
+
+    expect(result.payload?.assets).toBeDefined();
+    expect(result.payload?.assets['assets/img1']).toBe('data:image/png;base64,abc123');
+  });
+
+  it('빈 에셋 맵도 정상 처리', async () => {
+    const char = makeTestCharacter();
+    const png = await createBackupPng(char, {});
+    const result = await readBackupPng(png);
+
+    expect(result.payload?.assets).toEqual({});
+  });
+
+  it('버전 2로 저장됨', async () => {
+    const char = makeTestCharacter();
+    const png = await createBackupPng(char, {});
+    const result = await readBackupPng(png);
+
+    expect(result.payload?.version).toBe(2);
   });
 });

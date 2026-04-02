@@ -243,10 +243,19 @@ function buildCharaCardV2(char: any): object {
 // ── 메인 API ───────────────────────────────────────────
 
 const BACKUP_CHUNK_KEY = 'risubackup';
+const BACKUP_VERSION = 2;
+
+/** 백업 페이로드 — risubackup 청크에 저장되는 데이터 */
+export interface BackupPayload {
+  version: number;
+  character: any;
+  /** 에셋 경로 → data URL 매핑 (이미지, 이모션, 추가 에셋) */
+  assets: Record<string, string>;
+}
 
 export interface BackupResult {
-  /** 풀 캐릭터 데이터 (채팅 포함). risubackup 청크에서 복원. */
-  character: any | null;
+  /** 풀 백업 페이로드 (캐릭터 + 에셋). risubackup 청크에서 복원. */
+  payload: BackupPayload | null;
   /** 표준 chara 청크 존재 여부 (RisuAI 호환 카드) */
   hasCharaChunk: boolean;
   /** risubackup 청크 존재 여부 (플러그인 풀 백업) */
@@ -254,15 +263,97 @@ export interface BackupResult {
 }
 
 /**
+ * 캐릭터 객체에서 에셋 경로를 모두 수집.
+ * image, emotionImages, additionalAssets, ccAssets 필드를 스캔.
+ */
+export function collectAssetPaths(char: any): string[] {
+  const paths: string[] = [];
+
+  if (typeof char.image === 'string' && char.image) {
+    paths.push(char.image);
+  }
+
+  // emotionImages: [name, assetPath][]
+  if (Array.isArray(char.emotionImages)) {
+    for (const entry of char.emotionImages) {
+      if (Array.isArray(entry) && typeof entry[1] === 'string' && entry[1]) {
+        paths.push(entry[1]);
+      }
+    }
+  }
+
+  // additionalAssets: [name, assetPath, ...][]
+  if (Array.isArray(char.additionalAssets)) {
+    for (const entry of char.additionalAssets) {
+      if (Array.isArray(entry) && typeof entry[1] === 'string' && entry[1]) {
+        paths.push(entry[1]);
+      }
+    }
+  }
+
+  // ccAssets: { uri: string, ... }[]
+  if (Array.isArray(char.ccAssets)) {
+    for (const entry of char.ccAssets) {
+      if (entry && typeof entry.uri === 'string' && entry.uri) {
+        paths.push(entry.uri);
+      }
+    }
+  }
+
+  // 중복 제거
+  return [...new Set(paths)];
+}
+
+/**
+ * 에셋 경로 맵을 기반으로 캐릭터 객체 내 경로를 일괄 교체.
+ * 원본 객체를 변경하지 않고 새 객체를 반환.
+ */
+export function remapAssetPaths(char: any, pathMap: Record<string, string>): any {
+  const c = JSON.parse(JSON.stringify(char));
+
+  if (typeof c.image === 'string' && pathMap[c.image]) {
+    c.image = pathMap[c.image];
+  }
+
+  if (Array.isArray(c.emotionImages)) {
+    for (const entry of c.emotionImages) {
+      if (Array.isArray(entry) && typeof entry[1] === 'string' && pathMap[entry[1]]) {
+        entry[1] = pathMap[entry[1]];
+      }
+    }
+  }
+
+  if (Array.isArray(c.additionalAssets)) {
+    for (const entry of c.additionalAssets) {
+      if (Array.isArray(entry) && typeof entry[1] === 'string' && pathMap[entry[1]]) {
+        entry[1] = pathMap[entry[1]];
+      }
+    }
+  }
+
+  if (Array.isArray(c.ccAssets)) {
+    for (const entry of c.ccAssets) {
+      if (entry && typeof entry.uri === 'string' && pathMap[entry.uri]) {
+        entry.uri = pathMap[entry.uri];
+      }
+    }
+  }
+
+  return c;
+}
+
+/**
  * 캐릭터 데이터를 PNG 이미지에 임베딩.
- * - `chara` tEXt: 표준 CharacterCardV2 (RisuAI 임포트 호환, 채팅 없음)
- * - `risubackup` tEXt: 전체 캐릭터 + 채팅 (gzip 압축)
+ * - `chara` tEXt: 표준 CharacterCardV2 (RisuAI 임포트 호환, 채팅/에셋 없음)
+ * - `risubackup` tEXt: 전체 캐릭터 + 채팅 + 에셋 (gzip 압축)
  *
  * @param char - db.characters[i] 객체
+ * @param assets - 에셋 경로→data URL 맵 (collectAssetPaths로 수집 후 외부에서 resolve)
  * @param pngImage - 베이스 PNG 이미지 (없으면 1x1 투명 PNG 사용)
  */
 export async function createBackupPng(
   char: any,
+  assets: Record<string, string>,
   pngImage?: Uint8Array,
 ): Promise<Uint8Array> {
   const basePng = pngImage ?? PLACEHOLDER_PNG;
@@ -272,13 +363,13 @@ export async function createBackupPng(
   const charaB64 = btoa(unescape(encodeURIComponent(cardJson)));
   const charaChunk = makeTEXtChunk('chara', charaB64);
 
-  // 2. 풀 백업 청크 — 채팅 포함 전체 데이터 (gzip + base64)
-  const fullJson = new TextEncoder().encode(JSON.stringify(char));
+  // 2. 풀 백업 청크 — 캐릭터 + 채팅 + 에셋 (gzip + base64)
+  const payload: BackupPayload = { version: BACKUP_VERSION, character: char, assets };
+  const fullJson = new TextEncoder().encode(JSON.stringify(payload));
   const compressed = await gzipCompress(fullJson);
   const backupB64 = uint8ToBase64(compressed);
   const backupChunk = makeTEXtChunk(BACKUP_CHUNK_KEY, backupB64);
 
-  // 기존 chara/risubackup 청크가 있을 수 있으므로 제거 후 삽입
   const cleaned = stripTEXtChunks(basePng, ['chara', BACKUP_CHUNK_KEY]);
   return injectTEXtChunks(cleaned, [charaChunk, backupChunk]);
 }
@@ -286,22 +377,30 @@ export async function createBackupPng(
 /**
  * PNG에서 백업 데이터 추출.
  * risubackup 청크가 있으면 풀 복원, 없으면 null.
+ * v1(에셋 없음)과 v2(에셋 포함) 모두 지원.
  */
 export async function readBackupPng(png: Uint8Array): Promise<BackupResult> {
   const entries = parsePngTEXt(png);
   const charaEntry = entries.find(e => e.key === 'chara');
   const backupEntry = entries.find(e => e.key === BACKUP_CHUNK_KEY);
 
-  let character: any = null;
+  let payload: BackupPayload | null = null;
   if (backupEntry) {
     const compressed = base64ToUint8(backupEntry.value);
     const jsonBytes = await gzipDecompress(compressed);
     const jsonStr = new TextDecoder().decode(jsonBytes);
-    character = JSON.parse(jsonStr);
+    const parsed = JSON.parse(jsonStr);
+
+    // v1 호환: character 객체가 직접 저장된 경우
+    if (parsed && typeof parsed.version === 'number') {
+      payload = parsed;
+    } else {
+      payload = { version: 1, character: parsed, assets: {} };
+    }
   }
 
   return {
-    character,
+    payload,
     hasCharaChunk: !!charaEntry,
     hasFullBackup: !!backupEntry,
   };
