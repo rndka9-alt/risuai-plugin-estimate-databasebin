@@ -76,6 +76,23 @@ const BACKUP_CSS = [
   '.bk-spinner { display:inline-block; width:20px; height:20px; border:2px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:bk-spin .6s linear infinite; vertical-align:middle; margin-right:8px; }',
 ].join('\n');
 
+// ── 작업 중단 ──────────────────────────────────────────
+
+let activeController: AbortController | null = null;
+
+function abortAndClose(): void {
+  if (activeController) {
+    activeController.abort();
+    activeController = null;
+  }
+  risuai.hideContainer();
+}
+
+/** signal이 abort되었으면 에러를 던져 async 흐름을 중단 */
+function throwIfAborted(signal: AbortSignal): void {
+  if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+}
+
 // ── DOM 초기화 ─────────────────────────────────────────
 
 function initBackupDOM(): void {
@@ -93,10 +110,10 @@ function initBackupDOM(): void {
   }
   document.body.innerHTML = '<div id="app"></div>';
   document.body.addEventListener('click', (e) => {
-    if (e.target === document.body) risuai.hideContainer();
+    if (e.target === document.body) abortAndClose();
   });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') risuai.hideContainer();
+    if (e.key === 'Escape') abortAndClose();
   });
 }
 
@@ -163,7 +180,7 @@ function renderMain(chars: CharEntry[]): void {
 
   // 이벤트 바인딩
   const closeBtn = $('bk-cls');
-  if (closeBtn) closeBtn.addEventListener('click', () => risuai.hideContainer());
+  if (closeBtn) closeBtn.addEventListener('click', () => abortAndClose());
 
   bindTabs();
   bindBackup(chars);
@@ -207,11 +224,18 @@ function bindBackup(chars: CharEntry[]): void {
     const result = $('bk-result');
     if (!result) return;
 
+    // 이전 작업 중단 후 새 controller 생성
+    if (activeController) activeController.abort();
+    const controller = new AbortController();
+    activeController = controller;
+    const { signal } = controller;
+
     result.innerHTML = '<div class="bk-status"><span class="bk-spinner"></span>백업 생성 중...</div>';
     createBtn.setAttribute('disabled', '');
 
     try {
       const db = await risuai.getDatabase();
+      throwIfAborted(signal);
       if (!db || !Array.isArray(db.characters)) {
         result.innerHTML = '<div class="bk-status error">데이터베이스를 읽을 수 없습니다.</div>';
         return;
@@ -231,6 +255,7 @@ function bindBackup(chars: CharEntry[]): void {
       if (assetPaths.length > 0) {
         let loaded = 0;
         const updateProgress = () => {
+          if (signal.aborted) return;
           const status = $('bk-result');
           if (status) {
             status.innerHTML = '<div class="bk-status"><span class="bk-spinner"></span>에셋 읽는 중 (' + loaded + '/' + assetPaths.length + ')...</div>';
@@ -248,6 +273,7 @@ function bindBackup(chars: CharEntry[]): void {
             .catch(() => { /* 읽기 실패한 에셋은 건너뜀 */ })
             .finally(() => { loaded++; updateProgress(); })
         ));
+        throwIfAborted(signal);
       }
 
       // 메인 이미지를 PNG 썸네일로 변환
@@ -256,6 +282,7 @@ function bindBackup(chars: CharEntry[]): void {
           pngImage = await imageDataUrlToPng(assets[char.image]);
         } catch { /* placeholder 사용 */ }
       }
+      throwIfAborted(signal);
 
       result.innerHTML = '<div class="bk-status"><span class="bk-spinner"></span>백업 PNG 생성 중...</div>';
       const pngBytes = await createBackupPng(char, assets, pngImage);
@@ -275,9 +302,11 @@ function bindBackup(chars: CharEntry[]): void {
         '</div>';
 
     } catch (e: unknown) {
+      if (e instanceof DOMException && e.name === 'AbortError') return;
       result.innerHTML = '<div class="bk-status error">오류: ' +
         esc(e instanceof Error ? e.message : String(e)) + '</div>';
     } finally {
+      if (activeController === controller) activeController = null;
       createBtn.removeAttribute('disabled');
     }
   });
