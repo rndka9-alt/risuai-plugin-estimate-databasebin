@@ -66,6 +66,8 @@ const BACKUP_CSS = [
   '.bk-status { padding:12px; text-align:center; font-size:.9em; color:var(--text2); }',
   '.bk-status.error { color:var(--red); }',
   '.bk-status.success { color:#10b981; }',
+  '@keyframes bk-spin { to { transform:rotate(360deg); } }',
+  '.bk-spinner { display:inline-block; width:20px; height:20px; border:2px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:bk-spin .6s linear infinite; vertical-align:middle; margin-right:8px; }',
 ].join('\n');
 
 // ── DOM 초기화 ─────────────────────────────────────────
@@ -199,7 +201,7 @@ function bindBackup(chars: CharEntry[]): void {
     const result = $('bk-result');
     if (!result) return;
 
-    result.innerHTML = '<div class="bk-status">백업 생성 중...</div>';
+    result.innerHTML = '<div class="bk-status"><span class="bk-spinner"></span>백업 생성 중...</div>';
     createBtn.setAttribute('disabled', '');
 
     try {
@@ -258,7 +260,7 @@ function bindRestore(): void {
     if (!fileInput.files || fileInput.files.length === 0) return;
 
     const file = fileInput.files[0];
-    preview.innerHTML = '<div class="bk-status">파일 읽는 중...</div>';
+    preview.innerHTML = '<div class="bk-status"><span class="bk-spinner"></span>파일 읽는 중...</div>';
 
     try {
       const arrayBuf = await file.arrayBuffer();
@@ -309,7 +311,7 @@ async function doRestore(char: any): Promise<void> {
   const statusEl = $('bk-restore-status');
   const restoreBtn = $('bk-do-restore');
 
-  if (statusEl) statusEl.innerHTML = '<div class="bk-status">복원 중...</div>';
+  if (statusEl) statusEl.innerHTML = '<div class="bk-status"><span class="bk-spinner"></span>복원 중...</div>';
   if (restoreBtn) restoreBtn.setAttribute('disabled', '');
 
   try {
