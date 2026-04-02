@@ -223,22 +223,31 @@ function bindBackup(chars: CharEntry[]): void {
         return;
       }
 
-      // 에셋 수집
+      // 에셋 병렬 수집
       const assetPaths = collectAssetPaths(char);
       const assets: Record<string, string> = {};
       let pngImage: Uint8Array | undefined;
 
-      for (let ai = 0; ai < assetPaths.length; ai++) {
-        const status = $('bk-result');
-        if (status) {
-          status.innerHTML = '<div class="bk-status"><span class="bk-spinner"></span>에셋 읽는 중 (' + (ai + 1) + '/' + assetPaths.length + ')...</div>';
-        }
-        try {
-          const dataUrl = await risuai.readImage(assetPaths[ai]);
-          if (typeof dataUrl === 'string' && dataUrl) {
-            assets[assetPaths[ai]] = dataUrl;
+      if (assetPaths.length > 0) {
+        let loaded = 0;
+        const updateProgress = () => {
+          const status = $('bk-result');
+          if (status) {
+            status.innerHTML = '<div class="bk-status"><span class="bk-spinner"></span>에셋 읽는 중 (' + loaded + '/' + assetPaths.length + ')...</div>';
           }
-        } catch { /* 읽기 실패한 에셋은 건너뜀 */ }
+        };
+        updateProgress();
+
+        await Promise.all(assetPaths.map(path =>
+          risuai.readImage(path)
+            .then((dataUrl: unknown) => {
+              if (typeof dataUrl === 'string' && dataUrl) {
+                assets[path] = dataUrl;
+              }
+            })
+            .catch(() => { /* 읽기 실패한 에셋은 건너뜀 */ })
+            .finally(() => { loaded++; updateProgress(); })
+        ));
       }
 
       // 메인 이미지를 PNG 썸네일로 변환
@@ -345,21 +354,29 @@ async function doRestore(payload: import('./backup').BackupPayload): Promise<voi
   if (restoreBtn) restoreBtn.setAttribute('disabled', '');
 
   try {
-    // 1. 에셋 복원 — saveAsset()으로 저장하고 새 경로 매핑
+    // 1. 에셋 병렬 복원 — saveAsset()으로 저장하고 새 경로 매핑
     const assetEntries = Object.entries(payload.assets);
     const pathMap: Record<string, string> = {};
 
-    for (let i = 0; i < assetEntries.length; i++) {
-      if (statusEl) {
-        statusEl.innerHTML = '<div class="bk-status"><span class="bk-spinner"></span>에셋 복원 중 (' + (i + 1) + '/' + assetEntries.length + ')...</div>';
-      }
-      const [oldPath, dataUrl] = assetEntries[i];
-      try {
-        const newPath = await risuai.saveAsset(dataUrl);
-        if (typeof newPath === 'string') {
-          pathMap[oldPath] = newPath;
+    if (assetEntries.length > 0) {
+      let saved = 0;
+      const updateProgress = () => {
+        if (statusEl) {
+          statusEl.innerHTML = '<div class="bk-status"><span class="bk-spinner"></span>에셋 복원 중 (' + saved + '/' + assetEntries.length + ')...</div>';
         }
-      } catch { /* 개별 에셋 실패 시 건너뜀 */ }
+      };
+      updateProgress();
+
+      await Promise.all(assetEntries.map(([oldPath, dataUrl]) =>
+        risuai.saveAsset(dataUrl)
+          .then((newPath: unknown) => {
+            if (typeof newPath === 'string') {
+              pathMap[oldPath] = newPath;
+            }
+          })
+          .catch(() => { /* 개별 에셋 실패 시 건너뜀 */ })
+          .finally(() => { saved++; updateProgress(); })
+      ));
     }
 
     // 2. 캐릭터 객체의 에셋 경로를 새 경로로 교체
