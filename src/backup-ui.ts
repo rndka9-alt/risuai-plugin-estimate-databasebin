@@ -54,8 +54,16 @@ const BACKUP_CSS = [
   '.bk-tab.active { color:var(--text); border-bottom-color:var(--accent); font-weight:600; }',
   '.bk-panel { display:none; }',
   '.bk-panel.active { display:block; }',
-  '.bk-select { width:100%; padding:8px 12px; border-radius:6px; border:1px solid var(--border2); background:var(--btn); color:var(--text); font-size:.9em; margin-bottom:12px; }',
-  '.bk-select option { background:var(--bg2); color:var(--text); }',
+  '.bk-char-list { max-height:240px; overflow-y:auto; border:1px solid var(--border2); border-radius:6px; margin-bottom:12px; }',
+  '.bk-char-item { display:flex; align-items:center; gap:10px; padding:6px 10px; cursor:pointer; border-bottom:1px solid var(--border); }',
+  '.bk-char-item:last-child { border-bottom:none; }',
+  '.bk-char-item:hover { background:var(--btn); }',
+  '.bk-char-item.selected { background:var(--accent); color:#fff; }',
+  '.bk-char-thumb { width:32px; height:32px; border-radius:4px; object-fit:cover; background:var(--border); flex-shrink:0; }',
+  '.bk-char-info { flex:1; min-width:0; }',
+  '.bk-char-name { font-size:.9em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }',
+  '.bk-char-meta { font-size:.75em; color:var(--text2); }',
+  '.bk-char-item.selected .bk-char-meta { color:rgba(255,255,255,.7); }',
   '.bk-btn { display:inline-block; padding:8px 20px; border-radius:6px; border:1px solid var(--border2); background:var(--accent); color:#fff; cursor:pointer; font-size:.9em; font-weight:600; }',
   '.bk-btn:hover { opacity:.85; }',
   '.bk-btn:disabled { opacity:.4; cursor:not-allowed; }',
@@ -124,6 +132,7 @@ interface CharEntry {
   name: string;
   chatCount: number;
   isGroup: boolean;
+  imageKey: string | null;
 }
 
 function parseCharacterList(db: DatabaseSubset): CharEntry[] {
@@ -133,6 +142,7 @@ function parseCharacterList(db: DatabaseSubset): CharEntry[] {
     name: c.data?.name || c.name || 'char_' + i,
     chatCount: Array.isArray(c.chats) ? c.chats.length : 0,
     isGroup: c.type === 'group',
+    imageKey: typeof c.image === 'string' && c.image ? c.image : null,
   }));
 }
 
@@ -140,10 +150,17 @@ function renderMain(chars: CharEntry[]): void {
   const app = $('app');
   if (!app) return;
 
-  const options = chars
+  const listItems = chars
     .map(c => {
       const prefix = c.isGroup ? '[Group] ' : '';
-      return '<option value="' + c.index + '">' + esc(prefix + c.name) + ' (' + c.chatCount + ' chats)</option>';
+      // 썸네일: 이미지 로딩 전 빈 div placeholder, 로딩 후 img로 교체
+      return '<div class="bk-char-item" data-idx="' + c.index + '">' +
+        '<div class="bk-char-thumb" data-img-key="' + (c.imageKey ? esc(c.imageKey) : '') + '"></div>' +
+        '<div class="bk-char-info">' +
+          '<div class="bk-char-name">' + esc(prefix + c.name) + '</div>' +
+          '<div class="bk-char-meta">' + c.chatCount + ' chats</div>' +
+        '</div>' +
+      '</div>';
     })
     .join('');
 
@@ -161,10 +178,7 @@ function renderMain(chars: CharEntry[]): void {
 
     // 백업 패널
     '<div id="p-backup" class="bk-panel active">' +
-      '<select id="bk-char-select" class="bk-select">' +
-        '<option value="" disabled selected>캐릭터 선택...</option>' +
-        options +
-      '</select>' +
+      '<div id="bk-char-list" class="bk-char-list">' + listItems + '</div>' +
       '<button id="bk-create" class="bk-btn" disabled>백업 생성</button>' +
       '<div id="bk-result"></div>' +
     '</div>' +
@@ -185,6 +199,7 @@ function renderMain(chars: CharEntry[]): void {
   bindTabs();
   bindBackup(chars);
   bindRestore();
+  loadThumbnails();
 }
 
 // ── 탭 전환 ────────────────────────────────────────────
@@ -206,20 +221,32 @@ function bindTabs(): void {
 // ── 백업 탭 ────────────────────────────────────────────
 
 function bindBackup(chars: CharEntry[]): void {
-  const select = $('bk-char-select');
+  const listEl = $('bk-char-list');
   const createBtn = $('bk-create');
-  if (!select || !createBtn || !(select instanceof HTMLSelectElement)) return;
+  if (!listEl || !createBtn) return;
 
-  select.addEventListener('change', () => {
+  let selectedIdx = -1;
+
+  listEl.addEventListener('click', (e) => {
+    const item = (e.target instanceof Element) ? e.target.closest('.bk-char-item') : null;
+    if (!item || !(item instanceof HTMLElement)) return;
+
+    const idx = parseInt(item.dataset.idx ?? '', 10);
+    if (isNaN(idx)) return;
+
+    // 선택 상태 토글
+    listEl.querySelectorAll('.bk-char-item').forEach(el => el.classList.remove('selected'));
+    item.classList.add('selected');
+    selectedIdx = idx;
+
     createBtn.removeAttribute('disabled');
-    // 이전 결과 초기화
     const result = $('bk-result');
     if (result) result.innerHTML = '';
   });
 
   createBtn.addEventListener('click', async () => {
-    const idx = parseInt(select.value, 10);
-    if (isNaN(idx)) return;
+    const idx = selectedIdx;
+    if (idx < 0) return;
 
     const result = $('bk-result');
     if (!result) return;
@@ -309,6 +336,25 @@ function bindBackup(chars: CharEntry[]): void {
       if (activeController === controller) activeController = null;
       createBtn.removeAttribute('disabled');
     }
+  });
+}
+
+// ── 썸네일 비동기 로딩 ─────────────────────────────────
+
+function loadThumbnails(): void {
+  const thumbs = document.querySelectorAll('.bk-char-thumb[data-img-key]');
+  thumbs.forEach(el => {
+    if (!(el instanceof HTMLElement)) return;
+    const key = el.dataset.imgKey;
+    if (!key) return;
+
+    risuai.readImage(key).then(dataUrl => {
+      if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) return;
+      const img = document.createElement('img');
+      img.className = 'bk-char-thumb';
+      img.src = dataUrl;
+      el.replaceWith(img);
+    }).catch(() => { /* placeholder 유지 */ });
   });
 }
 
