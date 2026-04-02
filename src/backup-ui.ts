@@ -227,15 +227,14 @@ function bindBackup(chars: CharEntry[]): void {
       }
 
       const pngBytes = await createBackupPng(char, pngImage);
-      const blobUrl = URL.createObjectURL(
-        new Blob([toArrayBuffer(pngBytes)], { type: 'image/png' })
-      );
-
       const charName = chars.find(c => c.index === idx)?.name ?? 'character';
+
+      // blob URL은 iframe opaque origin에서 깨질 수 있으므로 data URL 사용
+      const dataUrl = uint8ToDataUrl(pngBytes);
 
       result.innerHTML =
         '<div class="bk-img-wrap">' +
-          '<img id="bk-img" src="' + blobUrl + '" alt="' + esc(charName) + ' 백업">' +
+          '<img id="bk-img" src="' + dataUrl + '" alt="' + esc(charName) + ' 백업">' +
           '<div class="bk-img-hint">우클릭 → 이미지를 다른 이름으로 저장</div>' +
         '</div>';
 
@@ -335,14 +334,6 @@ async function doRestore(char: any): Promise<void> {
         esc(e instanceof Error ? e.message : String(e)) + '</div>';
     }
   }
-}
-
-// ── Uint8Array → ArrayBuffer (타입 단언 없이) ──────────
-
-function toArrayBuffer(data: Uint8Array): ArrayBuffer {
-  const buf = new ArrayBuffer(data.byteLength);
-  new Uint8Array(buf).set(data);
-  return buf;
 }
 
 // ── 진입점 ─────────────────────────────────────────────
