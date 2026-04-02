@@ -33,10 +33,16 @@ function imageDataUrlToPng(dataUrl: string): Promise<Uint8Array | undefined> {
   });
 }
 
-function uint8ToDataUrl(data: Uint8Array): string {
-  let binary = '';
-  for (let i = 0; i < data.length; i++) binary += String.fromCharCode(data[i]);
-  return 'data:image/png;base64,' + btoa(binary);
+function toArrayBuffer(data: Uint8Array): ArrayBuffer {
+  const buf = new ArrayBuffer(data.byteLength);
+  new Uint8Array(buf).set(data);
+  return buf;
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1048576).toFixed(1) + ' MB';
 }
 
 // ── 추가 CSS (백업 UI 전용) ────────────────────────────
@@ -228,14 +234,18 @@ function bindBackup(chars: CharEntry[]): void {
 
       const pngBytes = await createBackupPng(char, pngImage);
       const charName = chars.find(c => c.index === idx)?.name ?? 'character';
+      const fileName = charName.replace(/[/\\?%*:|"<>]/g, '_') + '.backup.png';
 
-      // blob URL은 iframe opaque origin에서 깨질 수 있으므로 data URL 사용
-      const dataUrl = uint8ToDataUrl(pngBytes);
+      // CSP img-src *가 data:/blob:을 차단하므로 <img> 표시 불가.
+      // <a download>로 직접 다운로드 제공
+      const blob = new Blob([toArrayBuffer(pngBytes)], { type: 'image/png' });
+      const blobUrl = URL.createObjectURL(blob);
 
       result.innerHTML =
         '<div class="bk-img-wrap">' +
-          '<img id="bk-img" src="' + dataUrl + '" alt="' + esc(charName) + ' 백업">' +
-          '<div class="bk-img-hint">우클릭 → 이미지를 다른 이름으로 저장</div>' +
+          '<a id="bk-dl" class="bk-btn" download="' + esc(fileName) + '" href="' + blobUrl + '">' +
+            esc(charName) + ' 다운로드 (' + formatSize(pngBytes.byteLength) + ')' +
+          '</a>' +
         '</div>';
 
     } catch (e: unknown) {
