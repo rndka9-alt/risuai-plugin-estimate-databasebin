@@ -10,7 +10,7 @@
     "esbuild": "^0.25",
     "terser": "^5",
     "typescript": "^5",
-    "vitest": "^3"
+    "vitest": "^3.2.4"
   },
   "version": "0.1.0"
 }

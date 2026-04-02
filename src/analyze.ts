@@ -74,6 +74,21 @@ export async function analyze(
         }
       }
 
+      // 하위 항목별 용량 측정
+      const enc = new TextEncoder();
+      const chatsSize = Array.isArray(c.chats)
+        ? enc.encode(JSON.stringify(c.chats)).byteLength : 0;
+      const lorebook = c.data?.globalLore ?? c.globalLore;
+      const lorebookSize = Array.isArray(lorebook)
+        ? enc.encode(JSON.stringify(lorebook)).byteLength : 0;
+      // 에셋: 캐릭터 이미지 + 이모션 이미지 + additionalAssets
+      let assetsSize = 0;
+      if (typeof c.image === 'string') assetsSize += enc.encode(c.image).byteLength;
+      if (Array.isArray(c.emotionImages))
+        assetsSize += enc.encode(JSON.stringify(c.emotionImages)).byteLength;
+      if (Array.isArray(c.data?.additionalAssets))
+        assetsSize += enc.encode(JSON.stringify(c.data.additionalAssets)).byteLength;
+
       const prefix = c.type === 'group' ? '[Group] ' : '';
       result.chars.push({
         name: prefix + (c.data?.name || c.name || id),
@@ -81,11 +96,20 @@ export async function analyze(
         gz: gz + oh,
         chatCount,
         msgCount,
+        breakdown: {
+          chats: chatsSize,
+          lorebook: lorebookSize,
+          assets: assetsSize,
+          other: Math.max(0, raw - chatsSize - lorebookSize - assetsSize),
+        },
       });
       charRaw += raw + oh;
       charGz += gz + oh;
     } catch {
-      result.chars.push({ name: '[오류] char_' + i, raw: 0, gz: 0, chatCount: 0, msgCount: 0 });
+      result.chars.push({
+        name: '[오류] char_' + i, raw: 0, gz: 0, chatCount: 0, msgCount: 0,
+        breakdown: { chats: 0, lorebook: 0, assets: 0, other: 0 },
+      });
     }
   }
   result.chars.sort((a, b) => b.raw - a.raw);

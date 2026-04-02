@@ -1,4 +1,4 @@
-import type { AnalysisResult, SizeEntry } from './types';
+import type { AnalysisResult, SizeEntry, CharInfo } from './types';
 import { fmt, pct, esc } from './utils';
 
 // ── HTML 빌더 헬퍼 ────────────────────────────────────
@@ -51,6 +51,35 @@ function detailRows<T extends SizeEntry & Record<string, any>>(
     let name = String(x[nameKey]);
     if (name.length > 25) name = name.slice(0, 23) + '..';
     return tr([td(esc(name)), td(fmt(x.raw), 'n'), td(fmt(x.gz), 'n'), td(x.gz <= x.raw ? pct(x.gz, x.raw) : '-', 'n')]);
+  }).join('');
+}
+
+// 캐릭터별 breakdown 서브행 포함 상세 행
+function charDetailRows(chars: CharInfo[]): string {
+  const LABELS: [string, keyof CharInfo['breakdown']][] = [
+    ['채팅', 'chats'], ['로어북', 'lorebook'], ['에셋', 'assets'], ['기타', 'other'],
+  ];
+  return chars.map((c, i) => {
+    let name = c.name;
+    if (name.length > 25) name = name.slice(0, 23) + '..';
+    const parent = '<tr class="chr-row" data-ci="' + i + '">' +
+      td('<span class="chr-arr">&#9656;</span> ' + esc(name)) +
+      td(fmt(c.raw), 'n') + td(fmt(c.gz), 'n') +
+      td(c.gz <= c.raw ? pct(c.gz, c.raw) : '-', 'n') +
+      '</tr>';
+    const sub = LABELS
+      .filter(([, k]) => c.breakdown[k] > 0)
+      .map(([label, k]) => '<tr class="chr-sub cl" data-cp="' + i + '">' +
+        td('<span class="sub-indent">' + esc(label) + '</span>', 'mt') +
+        td(fmt(c.breakdown[k]), 'n mt') +
+        '<td class="n mt" colspan="2"></td></tr>')
+      .join('');
+    const chatLine = c.chatCount > 0
+      ? '<tr class="chr-sub cl" data-cp="' + i + '">' +
+        td('<span class="sub-indent sub-info">' + c.chatCount + '개 채팅 · ' + c.msgCount + '개 메시지</span>', 'mt') +
+        '<td colspan="3"></td></tr>'
+      : '';
+    return parent + sub + chatLine;
   }).join('');
 }
 
@@ -111,7 +140,7 @@ export function render(r: AnalysisResult, onRun: () => Promise<void>): void {
     '<div id="dd" class="cl">' +
       card(tbl(detH, detailRows(r.blocks, 'name')), '블록', 'h3') +
       card(tbl([['키'], ['원본', 1], ['Gzip', 1], ['압축률', 1]], detailRows(r.rootKeys, 'key')), 'Root 키 전체', 'h3') +
-      card(tbl([['이름'], ['원본', 1], ['Gzip', 1], ['압축률', 1]], detailRows(r.chars.slice(0, 50), 'name')) +
+      card(tbl([['이름'], ['원본', 1], ['Gzip', 1], ['압축률', 1]], charDetailRows(r.chars.slice(0, 50))) +
         (r.chars.length > 50 ? '<p class="more">...외 ' + (r.chars.length - 50) + '개</p>' : ''), '캐릭터 전체', 'h3') +
     '</div>' +
 
@@ -124,4 +153,19 @@ export function render(r: AnalysisResult, onRun: () => Promise<void>): void {
     const t = document.getElementById('dt')!;
     t.innerHTML = '상세 ' + (d.classList.toggle('cl') ? '&#9656;' : '&#9662;');
   });
+
+  // 캐릭터 행 클릭 → breakdown 서브행 토글
+  for (const row of document.querySelectorAll('.chr-row')) {
+    row.addEventListener('click', () => {
+      const ci = row.getAttribute('data-ci');
+      const arr = row.querySelector('.chr-arr');
+      const subs = document.querySelectorAll('.chr-sub[data-cp="' + ci + '"]');
+      const opening = subs.length > 0 && subs[0].classList.contains('cl');
+      for (const sub of subs) {
+        if (opening) sub.classList.remove('cl');
+        else sub.classList.add('cl');
+      }
+      if (arr) arr.innerHTML = opening ? '&#9662;' : '&#9656;';
+    });
+  }
 }

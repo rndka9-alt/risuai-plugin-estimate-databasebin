@@ -18,10 +18,18 @@ export interface RootKeyInfo extends SizeEntry {
   key: string;
 }
 
+export interface CharBreakdown {
+  chats: number;
+  lorebook: number;
+  assets: number;
+  other: number;
+}
+
 export interface CharInfo extends SizeEntry {
   name: string;
   chatCount: number;
   msgCount: number;
+  breakdown: CharBreakdown;
 }
 
 export interface RuntimeInfo {
