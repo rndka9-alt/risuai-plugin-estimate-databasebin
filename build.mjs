@@ -12,7 +12,7 @@ const BANNER = `/*!
 await build({
   entryPoints: ['src/plugin.ts'],
   bundle: true,
-  format: 'iife',
+  format: 'esm',
   target: 'esnext',
   platform: 'browser',
   outfile: 'plugin.js',
@@ -23,12 +23,11 @@ await build({
 // 2. terser: minify (/*! */ 주석 보존)
 const code = await readFile('plugin.js', 'utf8');
 const result = await minify(code, {
+  module: true,
   compress: { passes: 2 },
   mangle: true,
   format: {
-    // /*! */ 형태의 주석만 보존
     comments: /^!/,
-    // 세미콜론 제거 등 추가 압축
     semicolons: true,
   },
 });
