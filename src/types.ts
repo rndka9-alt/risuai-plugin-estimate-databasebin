@@ -16,6 +16,7 @@ export interface BlockInfo extends SizeEntry {
 
 export interface RootKeyInfo extends SizeEntry {
   key: string;
+  children?: RootKeyInfo[];
 }
 
 export interface CharBreakdown {

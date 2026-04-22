@@ -1,4 +1,4 @@
-import type { AnalysisResult, RuntimeInfo } from './types';
+import type { AnalysisResult, RuntimeInfo, RootKeyInfo } from './types';
 import { ROOT_KEYS } from './constants';
 import { gzip, blockHead } from './utils';
 
@@ -29,16 +29,43 @@ export async function analyze(
   progress('Root 블록 분석 중...');
   const rootObj: Record<string, unknown> = {};
   for (const key of ROOT_KEYS) {
-    const val = (db as Record<string, unknown>)[key];
-    if (val === undefined || val === null) continue;
-    rootObj[key] = val;
+    try {
+      const val = (db as Record<string, unknown>)[key];
+      if (val === undefined || val === null) continue;
+      rootObj[key] = val;
 
-    const json = JSON.stringify(val);
-    const raw = new TextEncoder().encode(json).byteLength;
-    // 5B 미만은 키별 분석에서 제외 (노이즈)
-    if (raw < 5) continue;
-    const gz = await gzip(json);
-    result.rootKeys.push({ key, raw, gz });
+      const json = JSON.stringify(val);
+      const raw = new TextEncoder().encode(json).byteLength;
+      if (raw < 5) continue;
+      const gz = await gzip(json);
+      const entry: RootKeyInfo = { key, raw, gz };
+
+      // pluginCustomStorage: 플러그인별 breakdown
+      if (key === 'pluginCustomStorage' && val && typeof val === 'object' && !Array.isArray(val)) {
+        const children: RootKeyInfo[] = [];
+        for (const pluginName of Object.keys(val as Record<string, unknown>)) {
+          try {
+            const pluginVal = (val as Record<string, unknown>)[pluginName];
+            if (pluginVal === undefined || pluginVal === null) continue;
+            const pJson = JSON.stringify(pluginVal);
+            const pRaw = new TextEncoder().encode(pJson).byteLength;
+            if (pRaw < 5) continue;
+            const pGz = await gzip(pJson);
+            children.push({ key: pluginName, raw: pRaw, gz: pGz });
+          } catch {
+            children.push({ key: pluginName + ' [분석 실패]', raw: 0, gz: 0 });
+          }
+        }
+        if (children.length > 0) {
+          children.sort((a, b) => b.raw - a.raw);
+          entry.children = children;
+        }
+      }
+
+      result.rootKeys.push(entry);
+    } catch {
+      result.rootKeys.push({ key: key + ' [분석 실패]', raw: 0, gz: 0 });
+    }
   }
   result.rootKeys.sort((a, b) => b.raw - a.raw);
 

@@ -1,4 +1,4 @@
-import type { AnalysisResult, SizeEntry, CharInfo, RuntimeInfo, EnvMode } from './types';
+import type { AnalysisResult, SizeEntry, CharInfo, RootKeyInfo, RuntimeInfo, EnvMode } from './types';
 import { fmt, pct, esc } from './utils';
 
 // ── HTML 빌더 헬퍼 ────────────────────────────────────
@@ -51,6 +51,35 @@ function detailRows<T extends SizeEntry & Record<string, any>>(
     let name = String(x[nameKey]);
     if (name.length > 25) name = name.slice(0, 23) + '..';
     return tr([td(esc(name)), td(fmt(x.raw), 'n'), td(fmt(x.gz), 'n'), td(x.gz <= x.raw ? pct(x.gz, x.raw) : '-', 'n')]);
+  }).join('');
+}
+
+// Root 키 상세 행 — children이 있으면 아코디언 서브행 포함
+function rootKeyDetailRows(items: RootKeyInfo[]): string {
+  return items.map((x, i) => {
+    let name = x.key;
+    if (name.length > 25) name = name.slice(0, 23) + '..';
+    const hasChildren = Array.isArray(x.children) && x.children.length > 0;
+
+    const parent = hasChildren
+      ? '<tr class="chr-row" data-ri="' + i + '">' +
+        td('<span class="chr-arr">&#9656;</span> ' + esc(name)) +
+        td(fmt(x.raw), 'n') + td(fmt(x.gz), 'n') +
+        td(x.gz <= x.raw ? pct(x.gz, x.raw) : '-', 'n') + '</tr>'
+      : tr([td(esc(name)), td(fmt(x.raw), 'n'), td(fmt(x.gz), 'n'), td(x.gz <= x.raw ? pct(x.gz, x.raw) : '-', 'n')]);
+
+    if (!hasChildren) return parent;
+
+    const subs = x.children!.map(c => {
+      let cName = c.key;
+      if (cName.length > 25) cName = cName.slice(0, 23) + '..';
+      return '<tr class="chr-sub cl" data-rp="' + i + '">' +
+        td('<span class="sub-indent">' + esc(cName) + '</span>', 'mt') +
+        td(fmt(c.raw), 'n mt') + td(fmt(c.gz), 'n mt') +
+        td(c.gz <= c.raw ? pct(c.gz, c.raw) : '-', 'n mt') + '</tr>';
+    }).join('');
+
+    return parent + subs;
   }).join('');
 }
 
@@ -206,7 +235,7 @@ export function render(r: AnalysisResult, onRun: (mode: EnvMode) => Promise<void
     '<h2 id="dt" class="tg det-tg">상세 &#9656;</h2>' +
     '<div id="dd" class="cl">' +
       card(tbl(detH, detailRows(detBlocks, 'name')), '블록', 'h3') +
-      card(tbl([['키'], ['원본', 1], ['Gzip', 1], ['압축률', 1]], detailRows(r.rootKeys, 'key')), 'Root 키 전체', 'h3') +
+      card(tbl([['키'], ['원본', 1], ['Gzip', 1], ['압축률', 1]], rootKeyDetailRows(r.rootKeys)), 'Root 키 전체', 'h3') +
       card(tbl([['이름'], ['원본', 1], ['Gzip', 1], ['압축률', 1]], charDetailRows(r.chars.slice(0, 50))) +
         (r.chars.length > 50 ? '<p class="more">...외 ' + (r.chars.length - 50) + '개</p>' : ''), isRemoteMode ? '캐릭터 전체 (개별 파일 크기)' : '캐릭터 전체', 'h3') +
     '</div>' +
@@ -232,12 +261,15 @@ export function render(r: AnalysisResult, onRun: (mode: EnvMode) => Promise<void
     });
   }
 
-  // 캐릭터 행 클릭 → breakdown 서브행 토글
+  // 아코디언 행 클릭 → 서브행 토글 (캐릭터: data-ci/data-cp, Root 키: data-ri/data-rp)
   for (const row of document.querySelectorAll('.chr-row')) {
     row.addEventListener('click', () => {
       const ci = row.getAttribute('data-ci');
+      const ri = row.getAttribute('data-ri');
+      const id = ci ?? ri;
+      const attr = ci ? 'data-cp' : 'data-rp';
       const arr = row.querySelector('.chr-arr');
-      const subs = document.querySelectorAll('.chr-sub[data-cp="' + ci + '"]');
+      const subs = document.querySelectorAll('.chr-sub[' + attr + '="' + id + '"]');
       const opening = subs.length > 0 && subs[0].classList.contains('cl');
       for (const sub of subs) {
         if (opening) sub.classList.remove('cl');
