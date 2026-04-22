@@ -2,10 +2,14 @@ import { build } from 'esbuild';
 import { minify } from 'terser';
 import { readFile, writeFile } from 'node:fs/promises';
 
+const { version } = JSON.parse(await readFile('package.json', 'utf8'));
+
 const BANNER = `/*!
 //@name database.bin
 //@description database.bin 용량을 RisuSave 블록 포맷 기준으로 추산합니다
 //@api 3.0
+//@version ${version}
+//@update-url https://raw.githubusercontent.com/rndka9-alt/risuai-plugin-estimate-databasebin/main/plugin.min.js
 */`;
 
 // 1. esbuild: TS → single JS bundle
