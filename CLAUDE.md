@@ -12,6 +12,19 @@ npx tsc --noEmit  # 타입 체크만
 
 산출물: `plugin.min.js` (배포용), `plugin.js` (중간 산출물, .gitignore)
 
+## 릴리즈
+
+```bash
+./release.sh              # patch (0.2.0 → 0.2.1)
+./release.sh minor        # minor (0.2.1 → 0.3.0)
+./release.sh major        # major (0.3.0 → 1.0.0)
+./release.sh patch "노트"  # 릴리즈 노트 지정
+```
+
+스크립트가 버전 범프 → 빌드 → 커밋 → 태그 → push → GitHub Release 생성을 일괄 처리한다.
+`plugin.min.js`의 `@version`은 빌드 시 `package.json`에서 읽으므로, 버전은 `package.json`에서만 관리한다.
+**`npm run build` 후 수동 커밋/push로 배포하지 않는다** — 버전 불일치가 발생할 수 있다.
+
 ## 코딩 규칙
 
 ### 타입 안전
@@ -68,3 +81,4 @@ npx tsc --noEmit  # 타입 체크만
 
 - 커밋 시 `/commit-with-context`를 사용하여 의사결정 컨텍스트를 보존한다.
 - 후속 작업 시 `git log`를 확인하여 기존 결정 배경과 기각된 방향을 참조한다.
+- 커밋 완료 후, 릴리즈 배포 여부를 사용자에게 확인한다 (`./release.sh` 안내).

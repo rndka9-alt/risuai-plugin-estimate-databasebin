@@ -23,6 +23,14 @@ RisuAI 플러그인. 서버에 전송되는 `database.bin` 용량을 추산합�
 - `enableRemoteSaving` 상태는 플러그인 API 화이트리스트에 없어 직접 감지 불가. "노드 (Remote)" 탭으로 수동 전환하여 확인.
 - 에셋(이미지 등)은 별도 저장되므로 추산에 미포함.
 
+## 릴리즈
+
+```bash
+./release.sh minor "릴리즈 노트"
+```
+
+자세한 사용법은 `CLAUDE.md` 참고.
+
 ## 요구사항
 
 - RisuAI Plugin API v3.0

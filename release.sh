@@ -25,12 +25,12 @@ esac
 NEXT="v${MAJOR}.${MINOR}.${PATCH}"
 echo "${CURRENT} → ${NEXT} (${BUMP})"
 
+# package.json 버전 업데이트 (빌드가 package.json에서 @version을 읽으므로 먼저 실행)
+npm version "${NEXT}" --no-git-tag-version --allow-same-version >/dev/null 2>&1
+
 # 빌드
 npm run build
 echo "빌드 완료: plugin.min.js"
-
-# package.json 버전 업데이트
-npm version "${NEXT}" --no-git-tag-version --allow-same-version >/dev/null 2>&1
 
 # 커밋 + 태그
 git add plugin.min.js package.json package-lock.json
