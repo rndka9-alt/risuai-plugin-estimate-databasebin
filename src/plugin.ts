@@ -1,5 +1,5 @@
 import type { RuntimeInfo, EnvMode } from './types';
-import { STYLES, ROOT_KEYS } from './constants';
+import { STYLES, ROOT_KEYS, KEY_LABELS } from './constants';
 import { esc } from './utils';
 import { analyze } from './analyze';
 import { render, envModeFromInfo } from './render';
@@ -36,8 +36,29 @@ async function fetchDb(
 
     // 3차: 설정만 (모듈도 제외)
     progress('개별 조회로 전환 — 설정: root keys (모듈 제외)');
-    db = await risuai.getDatabase(ROOT_KEYS);
-    throwIfAborted(signal);
+    try {
+      db = await risuai.getDatabase(ROOT_KEYS);
+      throwIfAborted(signal);
+    } catch {
+      if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+
+      // 4차: 키 하나씩 개별 조회
+      db = {} as DatabaseSubset;
+      for (const key of ROOT_KEYS) {
+        throwIfAborted(signal);
+        const label = KEY_LABELS[key] ?? key;
+        progress('개별 키 조회 — ' + label + ': ' + key);
+        try {
+          const partial = await risuai.getDatabase([key]);
+          if (partial) {
+            (db as Record<string, unknown>)[key] = (partial as Record<string, unknown>)[key];
+          }
+        } catch {
+          if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+          // 개별 키도 실패 → 해당 키는 측정 불가
+        }
+      }
+    }
   }
   if (!db) return null;
 

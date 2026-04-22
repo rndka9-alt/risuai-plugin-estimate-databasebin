@@ -10,6 +10,18 @@ export const ROOT_KEYS: string[] = [
   'colorSchemeName', 'selectedPersona', 'characterOrder',
 ];
 
+export const KEY_LABELS: Record<string, string> = {
+  enabledModules: '활성 모듈', moduleIntergration: '모듈 통합', pluginV2: '플러그인 V2',
+  personas: '페르소나', plugins: '플러그인', pluginCustomStorage: '플러그인 저장소',
+  temperature: '온도', askRemoval: '삭제 확인', maxContext: '최대 컨텍스트',
+  maxResponse: '최대 응답', frequencyPenalty: '빈도 페널티', PresensePenalty: '존재 페널티',
+  theme: '테마', textTheme: '텍스트 테마', lineHeight: '줄 높이',
+  seperateModelsForAxModels: '보조 모델 분리', seperateModels: '분리 모델',
+  customCSS: '커스텀 CSS', guiHTML: '커스텀 GUI', colorSchemeName: '색상 테마',
+  selectedPersona: '선택 페르소나', characterOrder: '캐릭터 정렬',
+  modules: '모듈',
+};
+
 // getColorScheme() 미구현 버전 대비 fallback — colorscheme.ts의 프리셋 복사
 export const PRESET_SCHEMES: Record<string, ThemeColors> = {
   'default':       { bgcolor:'#282a36', darkbg:'#21222c', borderc:'#6272a4', selected:'#44475a', draculared:'#ff5555', textcolor:'#f8f8f2', textcolor2:'#64748b', darkBorderc:'#4b5563', darkbutton:'#374151' },
