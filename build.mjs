@@ -20,6 +20,7 @@ await build({
   target: 'esnext',
   platform: 'browser',
   outfile: 'plugin.js',
+  define: { __VERSION__: JSON.stringify(version) },
 });
 
 // 2. terser: minify (/*! */ 주석 보존)

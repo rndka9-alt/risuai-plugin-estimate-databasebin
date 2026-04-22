@@ -1,6 +1,8 @@
 import type { AnalysisResult, SizeEntry, CharInfo, RootKeyInfo, RuntimeInfo, EnvMode } from './types';
 import { fmt, pct, esc } from './utils';
 
+declare const __VERSION__: string;
+
 // ── HTML 빌더 헬퍼 ────────────────────────────────────
 
 function tr(cells: string[]): string { return '<tr>' + cells.join('') + '</tr>'; }
@@ -241,7 +243,8 @@ export function render(r: AnalysisResult, onRun: (mode: EnvMode) => Promise<void
     '</div>' +
 
     '<p class="fn">' + ENV_NOTES[mode] + ' 화이트리스트 외 데이터는 추산에 미포함.</p>' +
-    '<div class="env-toggle">' + toggleBtns + '</div>';
+    '<div class="env-toggle">' + toggleBtns + '</div>' +
+    '<p class="fn" style="margin-top:8px;opacity:.5">v' + __VERSION__ + '</p>';
 
   document.getElementById('b-cls')!.addEventListener('click', () => { risuai.hideContainer(); });
   document.getElementById('b-ref')!.addEventListener('click', () => { onRun(mode); });
