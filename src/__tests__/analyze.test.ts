@@ -96,6 +96,27 @@ describe('analyze — CharInfo.breakdown', () => {
     expect(c.remoteRefSize).toBeLessThan(c.raw);
   });
 
+  it('휴지통 캐릭터에 [휴지통] 접두어 표시', async () => {
+    const db = mockDb([{
+      chaId: 't1',
+      data: { name: 'Trashed' },
+      trashTime: Date.now(),
+      chats: [],
+    }]);
+    const r = await analyze(db, info, noop);
+    expect(r.chars[0].name).toMatch(/^\[휴지통\]/);
+  });
+
+  it('휴지통이 아닌 캐릭터에는 접두어 없음', async () => {
+    const db = mockDb([{
+      chaId: 'n1',
+      data: { name: 'Normal' },
+      chats: [],
+    }]);
+    const r = await analyze(db, info, noop);
+    expect(r.chars[0].name).toBe('Normal');
+  });
+
   it('오류 발생 시 breakdown은 전부 0', async () => {
     // JSON.stringify가 실패하도록 순환 참조 생성
     const circular: any = { chaId: 'bad', chats: [] };

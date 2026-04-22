@@ -93,9 +93,10 @@ export async function analyze(
       if (Array.isArray(c.data?.additionalAssets))
         assetsSize += enc.encode(JSON.stringify(c.data.additionalAssets)).byteLength;
 
-      const prefix = c.type === 'group' ? '[Group] ' : '';
+      const groupTag = c.type === 'group' ? '[Group] ' : '';
+      const trashTag = typeof c.trashTime === 'number' ? '[휴지통] ' : '';
       result.chars.push({
-        name: prefix + (c.data?.name || c.name || id),
+        name: trashTag + groupTag + (c.data?.name || c.name || id),
         raw: raw + oh,
         gz: gz + oh,
         chatCount,
