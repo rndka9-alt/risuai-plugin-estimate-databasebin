@@ -40,8 +40,18 @@ export async function analyze(
       const gz = await gzip(json);
       const entry: RootKeyInfo = { key, raw, gz };
 
-      // pluginCustomStorage: 플러그인별 breakdown
+      // pluginCustomStorage: 플러그인별 breakdown + 미설치 감지
       if (key === 'pluginCustomStorage' && val && typeof val === 'object' && !Array.isArray(val)) {
+        const installedNames = new Set<string>();
+        const pluginsList = (db as Record<string, unknown>).plugins;
+        if (Array.isArray(pluginsList)) {
+          for (const p of pluginsList) {
+            if (p && typeof p === 'object' && 'name' in p && typeof p.name === 'string') {
+              installedNames.add(p.name);
+            }
+          }
+        }
+
         const children: RootKeyInfo[] = [];
         for (const pluginName of Object.keys(val as Record<string, unknown>)) {
           try {
@@ -51,7 +61,8 @@ export async function analyze(
             const pRaw = new TextEncoder().encode(pJson).byteLength;
             if (pRaw < 5) continue;
             const pGz = await gzip(pJson);
-            children.push({ key: pluginName, raw: pRaw, gz: pGz });
+            const tag = installedNames.has(pluginName) ? '' : ' [미설치]';
+            children.push({ key: pluginName + tag, raw: pRaw, gz: pGz });
           } catch {
             children.push({ key: pluginName + ' [분석 실패]', raw: 0, gz: 0 });
           }
