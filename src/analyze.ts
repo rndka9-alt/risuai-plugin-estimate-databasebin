@@ -61,8 +61,8 @@ export async function analyze(
             const pRaw = new TextEncoder().encode(pJson).byteLength;
             if (pRaw < 5) continue;
             const pGz = await gzip(pJson);
-            const tag = installedNames.has(pluginName) ? '' : ' [미설치]';
-            children.push({ key: pluginName + tag, raw: pRaw, gz: pGz });
+            const tag = installedNames.has(pluginName) ? '' : '[미설치] ';
+            children.push({ key: tag + pluginName, raw: pRaw, gz: pGz });
           } catch {
             children.push({ key: pluginName + ' [분석 실패]', raw: 0, gz: 0 });
           }

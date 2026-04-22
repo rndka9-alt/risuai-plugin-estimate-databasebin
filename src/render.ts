@@ -7,6 +7,9 @@ declare const __VERSION__: string;
 
 function tr(cells: string[]): string { return '<tr>' + cells.join('') + '</tr>'; }
 function td(v: string, cls?: string): string { return '<td' + (cls ? ' class="' + cls + '"' : '') + '>' + v + '</td>'; }
+function tdName(v: string, cls?: string): string {
+  return '<td' + (cls ? ' class="tn ' + cls + '"' : ' class="tn"') + ' title="' + esc(v) + '">' + esc(v) + '</td>';
+}
 function tdBar(v: string, w: string): string { return '<td class="n bv" style="--w:' + w + '%">' + v + '</td>'; }
 
 function tbl(heads: [string, number?][], rows: string): string {
@@ -35,10 +38,9 @@ function topN<T extends SizeEntry & Record<string, any>>(
   const max = top.length > 0 ? (top[0][valKey] as number) : 1;
 
   let rows = top.map(x => {
-    let name = String(x[nameKey]);
-    if (name.length > 25) name = name.slice(0, 23) + '..';
+    const name = String(x[nameKey]);
     const val = x[valKey] as number;
-    return tr([td(esc(name)), tdBar(fmt(val), (val / max * 100).toFixed(0))]);
+    return tr([tdName(name), tdBar(fmt(val), (val / max * 100).toFixed(0))]);
   }).join('');
   if (rest > 0) rows += tr([td('기타 ' + rest + '개', 'mt'), td(fmt(restSum), 'n mt')]);
   return rows;
@@ -50,33 +52,28 @@ function detailRows<T extends SizeEntry & Record<string, any>>(
   nameKey: keyof T,
 ): string {
   return items.map(x => {
-    let name = String(x[nameKey]);
-    if (name.length > 25) name = name.slice(0, 23) + '..';
-    return tr([td(esc(name)), td(fmt(x.raw), 'n'), td(fmt(x.gz), 'n'), td(x.gz <= x.raw ? pct(x.gz, x.raw) : '-', 'n')]);
+    const name = String(x[nameKey]);
+    return tr([tdName(name), td(fmt(x.raw), 'n'), td(fmt(x.gz), 'n'), td(x.gz <= x.raw ? pct(x.gz, x.raw) : '-', 'n')]);
   }).join('');
 }
 
 // Root 키 상세 행 — children이 있으면 아코디언 서브행 포함
 function rootKeyDetailRows(items: RootKeyInfo[]): string {
   return items.map((x, i) => {
-    let name = x.key;
-    if (name.length > 25) name = name.slice(0, 23) + '..';
     const hasChildren = Array.isArray(x.children) && x.children.length > 0;
 
     const parent = hasChildren
       ? '<tr class="chr-row" data-ri="' + i + '">' +
-        td('<span class="chr-arr">&#9656;</span> ' + esc(name)) +
+        '<td class="tn" title="' + esc(x.key) + '"><span class="chr-arr">&#9656;</span> ' + esc(x.key) + '</td>' +
         td(fmt(x.raw), 'n') + td(fmt(x.gz), 'n') +
         td(x.gz <= x.raw ? pct(x.gz, x.raw) : '-', 'n') + '</tr>'
-      : tr([td(esc(name)), td(fmt(x.raw), 'n'), td(fmt(x.gz), 'n'), td(x.gz <= x.raw ? pct(x.gz, x.raw) : '-', 'n')]);
+      : tr([tdName(x.key), td(fmt(x.raw), 'n'), td(fmt(x.gz), 'n'), td(x.gz <= x.raw ? pct(x.gz, x.raw) : '-', 'n')]);
 
     if (!hasChildren) return parent;
 
     const subs = x.children!.map(c => {
-      let cName = c.key;
-      if (cName.length > 25) cName = cName.slice(0, 23) + '..';
       return '<tr class="chr-sub cl" data-rp="' + i + '">' +
-        td('<span class="sub-indent">' + esc(cName) + '</span>', 'mt') +
+        '<td class="tn mt" title="' + esc(c.key) + '"><span class="sub-indent">' + esc(c.key) + '</span></td>' +
         td(fmt(c.raw), 'n mt') + td(fmt(c.gz), 'n mt') +
         td(c.gz <= c.raw ? pct(c.gz, c.raw) : '-', 'n mt') + '</tr>';
     }).join('');
@@ -91,10 +88,8 @@ function charDetailRows(chars: CharInfo[]): string {
     ['채팅', 'chats'], ['로어북', 'lorebook'], ['에셋', 'assets'], ['기타', 'other'],
   ];
   return chars.map((c, i) => {
-    let name = c.name;
-    if (name.length > 25) name = name.slice(0, 23) + '..';
     const parent = '<tr class="chr-row" data-ci="' + i + '">' +
-      td('<span class="chr-arr">&#9656;</span> ' + esc(name)) +
+      '<td class="tn" title="' + esc(c.name) + '"><span class="chr-arr">&#9656;</span> ' + esc(c.name) + '</td>' +
       td(fmt(c.raw), 'n') + td(fmt(c.gz), 'n') +
       td(c.gz <= c.raw ? pct(c.gz, c.raw) : '-', 'n') +
       '</tr>';

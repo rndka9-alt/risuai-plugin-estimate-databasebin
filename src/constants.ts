@@ -65,6 +65,7 @@ export const STYLES = [
   'th { text-align:left; padding:6px 10px; border-bottom:1px solid var(--border2); color:var(--text2); font-weight:600; }',
   'th.n { text-align:right; }',
   'td { padding:5px 10px; border-bottom:1px solid var(--border); }',
+  '.tn { max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }',
   'tbody tr:hover { background:var(--btn); }',
   '.n { text-align:right; font-variant-numeric:tabular-nums; }',
   'td.bv { position:relative; z-index:0; }',
